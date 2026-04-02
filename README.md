@@ -40,7 +40,7 @@ Edit `config.yaml`:
 annotator_id: your_name
 ```
 
-## 3. GAIA Trace Annotation Notes
+## 3. (Important!) GAIA Trace Annotation Notes
 
 This section standardizes how to read GAIA traces and how to label root cause consistently.
 
@@ -94,7 +94,7 @@ Example judgment:
 ### 3.4 Important labeling caveats
 
 1. Ignore failures caused purely by base model capability limits.  
-For example, `0adc4f3b99d9564d32811e913cc9d248` may be excluded if the failure is only due to insufficient reasoning ability.
+For example, `0adc4f3b99d9564d32811e913cc9d248` is excluded as the failure is due to insufficient reasoning ability.
 2. Watch for hallucination.  
 If the LLM provides conclusions without successful source validation (for example, no successful search evidence), treat this as a key risk signal (Note hallucinations are not necessarily the root cause).
 3. Code execution is not appear as an explicit standalone span in these traces.  
