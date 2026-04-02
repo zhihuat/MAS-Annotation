@@ -16,6 +16,8 @@ Launch:
 import json
 import sys
 import os
+import re
+import logging
 from pathlib import Path
 
 # Add project root to path
@@ -73,6 +75,13 @@ from src.progress_monitor.plan_extractor import PlanExtractor
 from src.utils.trace_utils import build_span_map, extract_task_description, flatten_spans
 
 app = Flask(__name__)
+logger = logging.getLogger(__name__)
+
+
+def _resolve_path(value: str | Path) -> Path:
+    """Resolve path relative to project root unless absolute."""
+    p = Path(value).expanduser()
+    return p if p.is_absolute() else (PROJECT_ROOT / p)
 
 # Load config.yaml
 _config_path = PROJECT_ROOT / "config.yaml"
@@ -88,34 +97,185 @@ annotator_id: str = _cfg.get("annotator_id", "default")
 
 # Directories
 config = ProgressMonitorConfig()
-summary_file = PROJECT_ROOT / _cfg.get("summary_file", config.summary_file)
-trace_dir = PROJECT_ROOT / _cfg.get("trace_dir", config.trace_dir)
-annotation_dir = PROJECT_ROOT / _cfg.get("annotation_dir", config.annotation_dir)
-save_dir = PROJECT_ROOT / "data" / "annotations" / annotator_id
+summary_file = _resolve_path(_cfg.get("summary_file", config.summary_file))
+trace_root_dir = _resolve_path(_cfg.get("trace_root_dir", "data/traces"))
+annotation_dir = _resolve_path(_cfg.get("annotation_dir", config.annotation_dir))
 annotations_root = PROJECT_ROOT / "data" / "annotations"
+legacy_save_root_dir = annotations_root / annotator_id
+_forced_default_task: str | None = None
 
 # Singletons
 plan_extractor = PlanExtractor(llm_client=None)
 _summaries_cache: dict[str, str] | None = None
 
 
+def _clean_summary_preview(summary: str, max_len: int = 120) -> str:
+    """Strip markdown heading prefixes from summary preview."""
+    if not summary:
+        return ""
+    text = summary.replace("\n", " ").strip()
+    text = re.sub(r"^#+\s*", "", text)
+    return text[:max_len]
+
+
 def _load_summaries() -> dict[str, str]:
     global _summaries_cache
     if _summaries_cache is None:
-        with open(summary_file, "r") as f:
-            _summaries_cache = json.load(f)
+        if not summary_file.exists():
+            logger.warning("Summary file not found: %s; continue with empty summaries", summary_file)
+            _summaries_cache = {}
+        else:
+            with open(summary_file, "r") as f:
+                _summaries_cache = json.load(f)
     return _summaries_cache
 
 
-def _load_annotation(trace_id: str) -> dict | None:
-    """Load annotation for a trace from save_dir. Returns None if not found."""
-    path = save_dir / f"{trace_id}.json"
-    if not path.exists():
-        return None
+def _list_tasks() -> list[str]:
+    """List available task names under trace_root_dir."""
+    if not trace_root_dir.exists():
+        return []
+    tasks = [
+        p.name
+        for p in sorted(trace_root_dir.iterdir())
+        if p.is_dir() and not p.name.startswith(".")
+    ]
+    return tasks
+
+
+def _default_task_name() -> str | None:
+    tasks = _list_tasks()
+    if _forced_default_task and _forced_default_task in tasks:
+        return _forced_default_task
+    configured = (_cfg.get("default_task") or "").strip()
+    if configured and configured in tasks:
+        return configured
+    return tasks[0] if tasks else None
+
+
+def _resolve_task_name(task_name: str | None) -> str:
+    task_name = (task_name or "").strip()
+    tasks = _list_tasks()
+    if not task_name:
+        default_task = _default_task_name()
+        if not default_task:
+            raise ValueError(
+                f"No tasks found under {trace_root_dir}. "
+                "Expected directories like data/traces/GAIA"
+            )
+        return default_task
+    if task_name not in tasks:
+        raise ValueError(
+            f"Unknown task '{task_name}'. Available tasks: "
+            f"{', '.join(tasks) if tasks else '(none)'}"
+        )
+    return task_name
+
+
+def _task_name_from_request() -> str:
+    return _resolve_task_name(request.args.get("task"))
+
+
+def _trace_dir_for_task(task_name: str) -> Path:
+    return trace_root_dir / task_name
+
+
+def _save_dir_for_task(task_name: str) -> Path:
+    # Legacy layout: data/annotations/{annotator_id}/{task}
+    return legacy_save_root_dir / task_name
+
+
+def _saved_dir_for_task(task_name: str) -> Path:
+    # New layout requested by user.
+    return _trace_dir_for_task(task_name) / "saved"
+
+
+def _excluded_dir_for_task(task_name: str) -> Path:
+    # New layout requested by user.
+    return _trace_dir_for_task(task_name) / "excluded"
+
+
+def _saved_path_for_trace(task_name: str, trace_id: str) -> Path:
+    return _saved_dir_for_task(task_name) / f"{trace_id}.json"
+
+
+def _excluded_path_for_trace(task_name: str, trace_id: str) -> Path:
+    return _excluded_dir_for_task(task_name) / f"{trace_id}.json"
+
+
+def _gt_annotation_path(task_name: str, trace_id: str) -> Path:
+    task_scoped = annotation_dir / task_name / f"{trace_id}.json"
+    if task_scoped.exists():
+        return task_scoped
+    return annotation_dir / f"{trace_id}.json"
+
+
+def _trace_ids_for_task(task_name: str) -> list[str]:
+    trace_dir = _trace_dir_for_task(task_name)
+    if not trace_dir.exists():
+        return []
+    return sorted(
+        p.stem for p in trace_dir.glob("*.json")
+        if p.is_file()
+    )
+
+
+def _load_annotation(task_name: str, trace_id: str) -> dict | None:
+    """Load annotation for a trace from task-scoped save dir. Returns None if not found."""
+    data, _ = _load_annotation_with_path(task_name, trace_id)
+    return data
+
+
+def _display_path(path: Path | None) -> str:
+    """Render a readable path for UI."""
+    if path is None:
+        return ""
+    try:
+        return str(path.relative_to(PROJECT_ROOT))
+    except ValueError:
+        return str(path)
+
+
+def _load_annotation_with_path(task_name: str, trace_id: str) -> tuple[dict | None, Path | None]:
+    """Load annotation and return both parsed data and source file path."""
+    # Prefer new task-local layout under trace directory.
+    candidates: list[Path] = []
+    saved_path = _saved_path_for_trace(task_name, trace_id)
+    excluded_path = _excluded_path_for_trace(task_name, trace_id)
+    if saved_path.exists():
+        candidates.append(saved_path)
+    if excluded_path.exists():
+        candidates.append(excluded_path)
+
+    # Backward-compatible fallback for previous layouts.
+    legacy_task_path = _save_dir_for_task(task_name) / f"{trace_id}.json"
+    legacy_task_saved_path = _save_dir_for_task(task_name) / "saved" / f"{trace_id}.json"
+    legacy_task_excluded_path = _save_dir_for_task(task_name) / "excluded" / f"{trace_id}.json"
+    legacy_flat_path = legacy_save_root_dir / f"{trace_id}.json"
+    if legacy_task_path.exists():
+        candidates.append(legacy_task_path)
+    if legacy_task_saved_path.exists():
+        candidates.append(legacy_task_saved_path)
+    if legacy_task_excluded_path.exists():
+        candidates.append(legacy_task_excluded_path)
+    if legacy_flat_path.exists():
+        candidates.append(legacy_flat_path)
+
+    if not candidates:
+        return None, None
+
+    # If multiple files exist, use the most recently modified one.
+    path = max(candidates, key=lambda p: p.stat().st_mtime)
     text = path.read_text().strip()
     if not text:
-        return None
-    return json.loads(text)
+        return None, None
+    data = json.loads(text)
+
+    # Ensure excluded status matches new directory semantics.
+    if path.parent.name == "excluded":
+        data["excluded"] = True
+    elif path.parent.name == "saved":
+        data["excluded"] = False
+    return data, path
 
 
 # ── Routes ────────────────────────────────────────────────────────
@@ -129,29 +289,43 @@ def index():
     )
 
 
+@app.route("/api/tasks")
+def list_tasks():
+    tasks = _list_tasks()
+    return jsonify({
+        "tasks": tasks,
+        "default_task": _default_task_name(),
+        "trace_root_dir": str(trace_root_dir),
+    })
+
+
 @app.route("/api/traces")
 def list_traces():
     """List all trace IDs that have both a summary and a raw trace file."""
-    summaries = _load_summaries()
-    traces = []
-    for tid in sorted(summaries.keys()):
-        trace_file = trace_dir / f"{tid}.json"
-        if not trace_file.exists():
-            continue
+    try:
+        task_name = _task_name_from_request()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
-        annotation = _load_annotation(tid)
+    summaries = _load_summaries()
+    trace_ids = _trace_ids_for_task(task_name)
+    traces = []
+    for tid in trace_ids:
+        annotation, annotation_path = _load_annotation_with_path(task_name, tid)
         saved = annotation is not None and not annotation.get("excluded", False)
         excluded = annotation is not None and annotation.get("excluded", False)
-        has_gt = (annotation_dir / f"{tid}.json").exists()
+        has_gt = _gt_annotation_path(task_name, tid).exists()
 
         # Summary preview: first 120 chars
-        summary_preview = summaries[tid][:120].replace("\n", " ") if summaries[tid] else ""
+        summary_preview = _clean_summary_preview(summaries.get(tid, ""), max_len=120)
 
         traces.append({
             "trace_id": tid,
+            "task": task_name,
             "saved": saved,
             "excluded": excluded,
             "has_gt": has_gt,
+            "annotation_path": _display_path(annotation_path),
             "summary_preview": summary_preview,
         })
     return jsonify(traces)
@@ -160,12 +334,17 @@ def list_traces():
 @app.route("/api/traces/stats")
 def trace_stats():
     """Return annotation progress stats."""
-    summaries = _load_summaries()
-    total = sum(1 for tid in summaries if (trace_dir / f"{tid}.json").exists())
+    try:
+        task_name = _task_name_from_request()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
+    trace_ids = _trace_ids_for_task(task_name)
+    total = len(trace_ids)
     saved = 0
     excluded = 0
-    for tid in summaries:
-        ann = _load_annotation(tid)
+    for tid in trace_ids:
+        ann = _load_annotation(task_name, tid)
         if ann is None:
             continue
         if ann.get("excluded", False):
@@ -178,27 +357,31 @@ def trace_stats():
 @app.route("/api/trace/<trace_id>")
 def get_trace(trace_id: str):
     """Load full trace data: summary, task description, plans, and annotations."""
-    summaries = _load_summaries()
-    if trace_id not in summaries:
-        return jsonify({"error": "Trace not found in summaries"}), 404
+    try:
+        task_name = _task_name_from_request()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
 
-    summary = summaries[trace_id]
+    summaries = _load_summaries()
+    summary = summaries.get(trace_id, "")
 
     # Load raw trace
-    trace_file = trace_dir / f"{trace_id}.json"
+    trace_file = _trace_dir_for_task(task_name) / f"{trace_id}.json"
+    if not trace_file.exists():
+        return jsonify({"error": f"Trace not found for task '{task_name}'"}), 404
+
     task_description = "Task description not available"
     raw_spans = None
     hierarchical_spans = None
-    if trace_file.exists():
-        with open(trace_file, "r") as f:
-            raw_trace = json.load(f)
-        raw_spans = flatten_spans(raw_trace)
-        hierarchical_spans = raw_trace.get("spans", [])
-        span_map = build_span_map(raw_trace)
-        task_description = extract_task_description(span_map)
+    with open(trace_file, "r") as f:
+        raw_trace = json.load(f)
+    raw_spans = flatten_spans(raw_trace)
+    hierarchical_spans = raw_trace.get("spans", [])
+    span_map = build_span_map(raw_trace)
+    task_description = extract_task_description(span_map)
 
     # Extract plans
-    plans = plan_extractor.extract_plans(trace_id, raw_spans, summary)
+    plans = plan_extractor.extract_plans(trace_id, raw_spans, summary or "")
     merged = plan_extractor.consolidate_plans(task_description, plans, trace_id)
 
     plans_data = []
@@ -220,25 +403,27 @@ def get_trace(trace_id: str):
 
     # Load root cause annotation (GT) if available
     gt_annotation = None
-    anno_path = annotation_dir / f"{trace_id}.json"
+    anno_path = _gt_annotation_path(task_name, trace_id)
     if anno_path.exists():
         with open(anno_path, "r") as f:
             gt_annotation = json.load(f)
 
     # Load saved annotation
-    saved_annotation = _load_annotation(trace_id)
+    saved_annotation, annotation_path = _load_annotation_with_path(task_name, trace_id)
     annotation_status = None
     if saved_annotation is not None:
         annotation_status = "excluded" if saved_annotation.get("excluded", False) else "saved"
 
     return jsonify({
         "trace_id": trace_id,
+        "task": task_name,
         "summary": summary,
         "task_description": task_description,
         "extracted_plans": plans_data,
         "merged_plan": merged_data,
         "gt_annotation": gt_annotation,
         "saved_annotation": saved_annotation,
+        "annotation_path": _display_path(annotation_path),
         "annotation_status": annotation_status,
         "spans": hierarchical_spans,
     })
@@ -247,29 +432,56 @@ def get_trace(trace_id: str):
 @app.route("/api/trace/<trace_id>/compare")
 def compare_trace(trace_id: str):
     """Get annotations from all annotators for side-by-side comparison."""
+    try:
+        task_name = _task_name_from_request()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
     result = {}
     if not annotations_root.exists():
         return jsonify(result)
     for annotator_dir in sorted(annotations_root.iterdir()):
         if not annotator_dir.is_dir():
             continue
-        ann_path = annotator_dir / f"{trace_id}.json"
+        ann_path = annotator_dir / task_name / f"{trace_id}.json"
+        if not ann_path.exists():
+            # Backward-compatible fallback for old flat annotation layout.
+            ann_path = annotator_dir / f"{trace_id}.json"
         if ann_path.exists():
             text = ann_path.read_text().strip()
             if text:
                 result[annotator_dir.name] = json.loads(text)
+    # Also expose current task-local trace annotations.
+    local_saved = _saved_path_for_trace(task_name, trace_id)
+    local_excluded = _excluded_path_for_trace(task_name, trace_id)
+    local_path = local_excluded if local_excluded.exists() else local_saved
+    if local_path.exists():
+        text = local_path.read_text().strip()
+        if text:
+            data = json.loads(text)
+            data["excluded"] = local_path.parent.name == "excluded"
+            result["task_local"] = data
     return jsonify(result)
 
 
 @app.route("/api/trace/<trace_id>", methods=["PUT"])
 def save_trace(trace_id: str):
     """Save progress annotation for a trace."""
+    try:
+        task_name = _task_name_from_request()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
     data = request.get_json()
+    save_dir = _saved_dir_for_task(task_name)
     save_dir.mkdir(parents=True, exist_ok=True)
+    excluded_path = _excluded_path_for_trace(task_name, trace_id)
+    if excluded_path.exists():
+        excluded_path.unlink()
 
     annotation = {
         "trace_id": trace_id,
-        "finalized_plan": data.get("finalized_plan", []),
+        "task": task_name,
         "root_cause_step": data.get("root_cause_step", None),
         "root_cause_span_id": data.get("root_cause_span_id", None),
         "root_cause_reasoning": data.get("root_cause_reasoning", ""),
@@ -278,21 +490,31 @@ def save_trace(trace_id: str):
         "excluded": False,
     }
 
-    (save_dir / f"{trace_id}.json").write_text(
+    saved_path = _saved_path_for_trace(task_name, trace_id)
+    saved_path.write_text(
         json.dumps(annotation, indent=2, ensure_ascii=False) + "\n"
     )
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "annotation_path": _display_path(saved_path)})
 
 
 @app.route("/api/trace/<trace_id>/exclude", methods=["PUT"])
 def exclude_trace(trace_id: str):
     """Mark a trace as excluded."""
+    try:
+        task_name = _task_name_from_request()
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+
     data = request.get_json()
+    save_dir = _excluded_dir_for_task(task_name)
     save_dir.mkdir(parents=True, exist_ok=True)
+    saved_path = _saved_path_for_trace(task_name, trace_id)
+    if saved_path.exists():
+        saved_path.unlink()
 
     annotation = {
         "trace_id": trace_id,
-        "finalized_plan": data.get("finalized_plan", []),
+        "task": task_name,
         "root_cause_step": data.get("root_cause_step", None),
         "root_cause_span_id": data.get("root_cause_span_id", None),
         "root_cause_reasoning": data.get("root_cause_reasoning", ""),
@@ -301,10 +523,11 @@ def exclude_trace(trace_id: str):
         "excluded": True,
     }
 
-    (save_dir / f"{trace_id}.json").write_text(
+    excluded_path = _excluded_path_for_trace(task_name, trace_id)
+    excluded_path.write_text(
         json.dumps(annotation, indent=2, ensure_ascii=False) + "\n"
     )
-    return jsonify({"ok": True})
+    return jsonify({"ok": True, "annotation_path": _display_path(excluded_path)})
 
 
 # ── Main ──────────────────────────────────────────────────────────
@@ -313,14 +536,19 @@ def exclude_trace(trace_id: str):
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Progress Annotator")
+    parser = argparse.ArgumentParser(description="Root Cause Annotator")
     parser.add_argument("--port", type=int, default=6060)
     args = parser.parse_args()
 
+    tasks = _list_tasks()
+
     print(f"Annotator ID:   {annotator_id}")
     print(f"Summary file:   {summary_file}")
-    print(f"Trace dir:      {trace_dir}")
-    print(f"Save dir:       {save_dir}")
+    print(f"Trace root:     {trace_root_dir}")
+    print(f"Save dirs:      data/traces/{{task}}/saved  |  data/traces/{{task}}/excluded")
+    print(f"Legacy save:    {legacy_save_root_dir}")
+    print(f"Default task:   {_default_task_name()}")
+    print(f"Tasks found:    {len(tasks)} ({', '.join(tasks) if tasks else 'none'})")
     print(f"Port:           {args.port}")
     print(f"Summaries:      {len(_load_summaries())}")
     app.run(debug=True, port=args.port)

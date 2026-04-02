@@ -1,110 +1,182 @@
 # mas-annotation
 
-Annotation tool for MAS failure traces. Two annotators work independently, then compute inter-annotator agreement with one command.
+A local web tool for multi-task root-cause annotation.
 
-## Setup (collaborator)
+The UI is named **Root Cause Annotator**. It supports switching tasks under `data/traces/` and stores annotation results in `saved / excluded` folders per task.
 
-**1. Clone the repo**
+## 1. What this tool does
+
+1. Auto-discovers tasks from directory names under `data/traces/{task}`.
+2. Shows trace list for the selected task (with search).
+3. Cross-highlights between `Trace Spans` and `Trace Summary`.
+4. Lets you mark root-cause span and write reasoning/notes.
+5. Splits outputs by action:
+   - Save -> `data/traces/{task}/saved/{trace_id}.json`
+   - Exclude -> `data/traces/{task}/excluded/{trace_id}.json`
+6. Auto-saves after about 1.5 seconds of inactivity.
+
+## 2. Setup
+
+1. Clone the repo:
 ```bash
 git clone <repo-url>
 cd mas-annotation
 ```
 
-**2. Install dependencies**
+2. Install dependencies:
 ```bash
 pip install -r requirements.txt
 ```
 
-**3. Set your annotator ID**
+3. Set your annotator ID (required):
 
 Edit `config.yaml`:
 ```yaml
-annotator_id: your_name   # ← change this to your name
+annotator_id: your_name
 ```
 
-**4. Run the tool**
+## 3. Directory conventions (important)
+
+### 3.1 Input traces
+
+Use one folder per task. Put trace json files directly in each task folder:
+
+```text
+data/
+  traces/
+    GAIA/
+      0035f455....json
+      041b7f9c....json
+    TaskB/
+      xxx.json
+```
+
+Notes:
+1. Only `*.json` files directly under `data/traces/{task}` are treated as traces.
+2. Json files in nested folders (for example `.ipynb_checkpoints`) are ignored.
+
+### 3.2 Output annotations
+
+Annotations are written under the same task folder:
+
+```text
+data/traces/{task}/saved/{trace_id}.json
+data/traces/{task}/excluded/{trace_id}.json
+```
+
+Behavior:
+1. Clicking Save writes to `saved/` and removes the same trace file from `excluded/` if present.
+2. Clicking Exclude writes to `excluded/` and removes the same trace file from `saved/` if present.
+
+## 4. config.yaml fields
+
+Current effective fields:
+
+1. `annotator_id`: required.
+2. `summary_file`: optional trace summary json path.
+3. `trace_root_dir`: optional task root (default: `data/traces`).
+4. `default_task`: optional default task name (must exist under `trace_root_dir`).
+5. `annotation_dir`: optional GT annotation directory for read-only GT display.
+
+Example:
+```yaml
+annotator_id: zhihuat
+summary_file: data/trace_summary/claude-haiku-4-5-20251001/trace_summaries.json
+trace_root_dir: data/traces
+default_task: GAIA
+annotation_dir: data/gt_annotations
+```
+
+Notes:
+1. If `summary_file` is missing, the server still starts; summary content will be empty.
+2. Legacy `trace_dir` is not used for task switching anymore.
+
+## 5. Run
+
+Start:
 ```bash
 python demo/progress_annotator.py
 ```
 
-Open http://localhost:6060 in your browser. Your annotations are saved to `data/annotations/your_name/`.
-
-## Annotation workflow
-
-**Keyboard shortcuts:**
-| Key | Action |
-|-----|--------|
-| `j` / `→` | Next trace |
-| `k` / `←` | Previous trace |
-| `s` | Save |
-| `e` | Exclude (flag as unusable) |
-| `1`–`9` | Select root cause step N |
-| `Ctrl+S` | Save |
-
-**Per-trace steps:**
-1. Read the **Task Description** and **Trace Summary** to understand what the agent was trying to do.
-2. Review the **Spans** panel to see the execution tree.
-3. Edit the **Finalized Plan** if the auto-extracted plan is wrong.
-4. Click **RC** on the plan step where the agent first went wrong (root cause step). Or press `1`–`9`.
-5. Optionally click **Mark RC** on the specific span in the spans/summary panel.
-6. Write your **Reasoning** in the text box.
-7. The tool auto-saves after 1.5s of inactivity. Or press `s`.
-
-**Excluded traces:** If a trace is ambiguous, broken, or otherwise unusable for IAA, press `e` to exclude it. Excluded traces are dropped from agreement computation.
-
-## Sharing annotations
-
-After annotating, commit your annotation files and push (or send a PR):
-
+Custom port:
 ```bash
-git add data/annotations/your_name/
-git commit -m "annotations: add your_name batch"
-git push
+python demo/progress_annotator.py --port 6060
 ```
 
-Or just zip `data/annotations/your_name/` and share directly — the other annotator can drop it into their local repo.
-
-## Computing agreement
-
-Once both annotators have annotated, run:
-
-```bash
-python compute_iaa.py
+Open:
+```text
+http://localhost:6060
 ```
 
-This auto-discovers the two annotator directories and writes `iaa_report.md` with:
-- Percent exact agreement on `root_cause_step`
-- Cohen's kappa (unweighted)
-- Mean absolute step distance
-- Confusion matrix (steps 1–8, bucket "8+" for longer plans)
-- Per-trace table with disagreement flags
-- Full reasoning for high-disagreement traces
+## 6. Annotation workflow
 
-To specify annotators explicitly:
-```bash
-python compute_iaa.py --annotator1 zhihuat --annotator2 collaborator --out report.md
-```
+1. Choose a task from the top `Task` dropdown (for example `GAIA`).
+2. Click a trace from the left `Traces` list.
+3. Read `Task Description` and `Trace Summary` for context.
+4. Inspect `Trace Spans` and mark root-cause span when needed.
+5. Fill in `Reasoning` in `Root Cause Annotation`.
+6. Click `Save` or `Exclude`.
+7. Move to the next trace and repeat.
 
-## Annotation schema
+## 7. Keyboard shortcuts
 
-Each annotation file (`data/annotations/{annotator_id}/{trace_id}.json`):
+1. `j` / `→`: next trace
+2. `k` / `←`: previous trace
+3. `s`: save
+4. `e`: exclude
+5. `Ctrl+S` / `Cmd+S`: save
+
+## 8. Output schema
+
+Example json in `saved/` or `excluded/`:
 
 ```json
 {
-  "trace_id": "abc123",
-  "finalized_plan": [
-    {"step_number": 1, "description": "Search for articles", "depends_on": []},
-    {"step_number": 2, "description": "Extract count", "depends_on": [1]}
-  ],
-  "root_cause_step": 2,
-  "root_cause_span_id": "span_xyz",
-  "root_cause_reasoning": "The agent failed at extraction — returned empty result.",
+  "trace_id": "0035f455b3ff2295167a844f04d85d34",
+  "task": "GAIA",
+  "root_cause_step": null,
+  "root_cause_span_id": "abc123",
+  "root_cause_reasoning": "Tool call failed and downstream steps used invalid output.",
   "step_annotations": [],
   "notes": "",
   "excluded": false
 }
 ```
 
-`root_cause_step` is the 1-indexed step number in `finalized_plan` where the agent first failed. This is the primary field used for IAA computation.
+Notes:
+1. `excluded` is usually `false` in `saved/` and `true` in `excluded/`.
+2. `finalized_plan` is no longer saved.
 
-`excluded: true` means the trace is flagged as unusable and will be dropped from IAA.
+## 9. Multi-task behavior
+
+1. Task list is built from first-level subdirectories under `data/traces/`.
+2. If there are unsaved changes, switching task asks for confirmation.
+3. Progress stats (`done / total`) are calculated per selected task.
+
+## 10. Compatibility with old data
+
+The backend reads these paths in priority order:
+
+1. `data/traces/{task}/saved/{trace_id}.json`
+2. `data/traces/{task}/excluded/{trace_id}.json`
+3. `data/annotations/{annotator_id}/{task}/{trace_id}.json` (legacy)
+4. `data/annotations/{annotator_id}/{trace_id}.json` (legacy)
+
+Recommendation: use the new `data/traces/{task}/saved|excluded` layout going forward.
+
+## 11. FAQ
+
+### Q1: I see "No tasks found"
+Make sure `data/traces/{task}` folders exist and task folder names do not start with `.`.
+
+### Q2: No traces shown for a task
+Ensure trace files are `*.json` and located directly under `data/traces/{task}`.
+
+### Q3: Where did Save output go?
+Check `data/traces/{task}/saved/{trace_id}.json`.
+
+### Q4: Where did Exclude output go?
+Check `data/traces/{task}/excluded/{trace_id}.json`.
+
+### Q5: Why is summary empty?
+Usually `summary_file` is missing, invalid, or does not include this `trace_id`.

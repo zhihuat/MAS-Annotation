@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Progress Annotator</title>
+  <title>Root Cause Annotator</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -31,6 +31,35 @@
     }
     #header h1 { font-size: 15px; font-weight: 700; color: #0F172A; white-space: nowrap; }
     #header h1 span { color: #7C3AED; }
+    #task-picker {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-shrink: 0;
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 7px;
+      padding: 3px 8px;
+    }
+    #task-picker label {
+      font-size: 10px;
+      font-weight: 700;
+      color: #64748B;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+    }
+    #task-select {
+      min-width: 130px;
+      max-width: 220px;
+      font-size: 12px;
+      border: none;
+      outline: none;
+      background: transparent;
+      color: #0F172A;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    #task-select:disabled { color: #94A3B8; cursor: not-allowed; }
     #trace-meta {
       flex: 1;
       font-size: 11px;
@@ -139,11 +168,24 @@
       cursor: pointer;
       border-bottom: 1px solid #F1F5F9;
       display: flex;
-      align-items: center;
-      gap: 6px;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 3px;
     }
     .file-item:hover { background: #E2E8F0; }
     .file-item.active { background: #DBEAFE; font-weight: 700; }
+    .file-path {
+      font-size: 10px;
+      color: #64748B;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      font-family: monospace;
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 5px;
+      padding: 2px 6px;
+    }
     .file-item .badge {
       font-size: 8px; font-weight: 700; padding: 1px 5px;
       border-radius: 8px; flex-shrink: 0;
@@ -166,79 +208,247 @@
     #spans-content { padding: 10px 0 24px 0; }
 
     .span-block {
+      border: 1px solid rgba(15,23,42,.08);
       border-left: 4px solid var(--blk-bd);
-      background: var(--blk-bg);
-      margin: 8px 14px;
-      border-radius: 6px;
+      background: #FFFFFF;
+      margin: 10px 14px;
+      border-radius: 10px;
       overflow: hidden;
       cursor: pointer;
-      transition: box-shadow 0.12s;
+      position: relative;
+      transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
     }
-    .span-block:hover { box-shadow: 0 2px 10px rgba(0,0,0,.09); }
+    .span-block::before {
+      content: '';
+      position: absolute;
+      left: 0;
+      right: 0;
+      top: 0;
+      height: 2px;
+      background: linear-gradient(90deg, var(--blk-bd), transparent);
+      opacity: .65;
+      pointer-events: none;
+    }
+    .span-block:hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px rgba(15,23,42,.09);
+    }
     .span-block.active {
-      box-shadow: 0 0 0 2px var(--blk-bd), 0 4px 12px rgba(0,0,0,.12);
-      z-index: 1; position: relative;
+      box-shadow: 0 0 0 2px var(--blk-bd), 0 12px 26px rgba(15,23,42,.16);
+      z-index: 1;
+      position: relative;
     }
     .span-block.root-cause-marked {
       border-left-color: #EF4444 !important;
-      background: #FFF5F5 !important;
-      box-shadow: inset 0 0 0 1px rgba(239,68,68,.15);
+      box-shadow: 0 0 0 1.5px rgba(239,68,68,.28), 0 12px 26px rgba(239,68,68,.15);
+    }
+    .span-block.root-cause-marked::after {
+      content: 'RC';
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      font-size: 9px;
+      font-weight: 800;
+      letter-spacing: .08em;
+      color: #991B1B;
+      background: #FEE2E2;
+      border: 1px solid #FCA5A5;
+      border-radius: 999px;
+      padding: 2px 7px;
+      pointer-events: none;
     }
 
     .blk-hdr {
-      display: flex; align-items: center; gap: 8px;
-      padding: 9px 12px; border-bottom: 1px solid rgba(0,0,0,.06);
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      padding: 10px 12px 8px 12px;
+      border-bottom: 1px solid #E2E8F0;
+      background: linear-gradient(135deg, var(--blk-bg), #FFFFFF 70%);
+    }
+    .blk-top {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      min-width: 0;
     }
     .blk-badge {
-      font-size: 8px; font-weight: 900; letter-spacing: .07em;
-      padding: 2px 6px; border-radius: 3px; flex-shrink: 0;
+      font-size: 8px;
+      font-weight: 900;
+      letter-spacing: .07em;
+      padding: 2px 6px;
+      border-radius: 999px;
+      flex-shrink: 0;
     }
     .blk-name {
-      font-size: 13px; font-weight: 600; font-family: monospace;
-      color: #1E293B; flex: 1;
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-size: 13px;
+      font-weight: 700;
+      font-family: monospace;
+      color: #1E293B;
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
-    .blk-dur { font-size: 10px; color: #94A3B8; flex-shrink: 0; }
+    .blk-dur {
+      font-size: 10px;
+      color: #64748B;
+      flex-shrink: 0;
+      background: rgba(255,255,255,.7);
+      border: 1px solid #E2E8F0;
+      border-radius: 999px;
+      padding: 1px 6px;
+    }
     .blk-status {
-      font-size: 9px; font-weight: 600; padding: 1px 6px;
-      border-radius: 8px; flex-shrink: 0;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 1px 7px;
+      border-radius: 999px;
+      flex-shrink: 0;
     }
-    .st-ok    { background: #ECFDF5; color: #065F46; }
-    .st-error { background: #FEF2F2; color: #991B1B; }
+    .st-ok { background: #DCFCE7; color: #166534; border: 1px solid #86EFAC; }
+    .st-error { background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; }
 
-    .blk-io { padding: 8px 12px 10px 12px; }
-    .io-row { margin-bottom: 6px; }
-    .io-row:last-child { margin-bottom: 0; }
-    .io-lbl {
-      font-size: 9px; font-weight: 700;
-      text-transform: uppercase; letter-spacing: .1em; margin-bottom: 3px;
+    .blk-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
     }
-    .lbl-in  { color: #2563EB; }
-    .lbl-out { color: #059669; }
-    .lbl-nil { color: #CBD5E1; font-style: italic; font-weight: 400; text-transform: none; letter-spacing: 0; }
+    .blk-chip {
+      font-size: 9px;
+      color: #475569;
+      background: rgba(255,255,255,.78);
+      border: 1px solid #E2E8F0;
+      border-radius: 999px;
+      padding: 2px 7px;
+      max-width: 100%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .blk-chip.mono { font-family: monospace; }
+    .blk-chip.token { color: #1D4ED8; background: #EFF6FF; border-color: #BFDBFE; }
+    .blk-chip.model { color: #6D28D9; background: #F5F3FF; border-color: #DDD6FE; }
+    .blk-chip.warn { color: #B45309; background: #FFFBEB; border-color: #FCD34D; }
+
+    .blk-io { padding: 10px 12px 12px 12px; }
+    .io-tabs {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 9px;
+    }
+    .io-tab {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      border-radius: 999px;
+      border: 1px solid #D1D5DB;
+      padding: 4px 10px;
+      background: #FFFFFF;
+      color: #64748B;
+      cursor: pointer;
+    }
+    .io-tab:hover { border-color: #94A3B8; color: #334155; }
+    .io-tab.active[data-tab="input"] { background: #DBEAFE; color: #1E40AF; border-color: #93C5FD; }
+    .io-tab.active[data-tab="output"] { background: #DCFCE7; color: #166534; border-color: #86EFAC; }
+    .io-tab.empty { opacity: .65; }
+
+    .io-pane { display: none; }
+    .io-pane.active { display: block; }
+    .io-pane-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 6px;
+    }
+    .io-lbl {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .1em;
+      color: #64748B;
+    }
+    .io-copy-btn {
+      font-size: 10px;
+      color: #334155;
+      background: #FFFFFF;
+      border: 1px solid #CBD5E1;
+      border-radius: 999px;
+      padding: 2px 8px;
+      cursor: pointer;
+    }
+    .io-copy-btn:hover { border-color: #94A3B8; color: #0F172A; }
+    .no-io {
+      font-size: 11px;
+      color: #94A3B8;
+      font-style: italic;
+      background: #F8FAFC;
+      border: 1px dashed #CBD5E1;
+      border-radius: 8px;
+      padding: 9px 10px;
+    }
+    .io-val-wrap {
+      position: relative;
+      border-radius: 8px;
+      overflow: hidden;
+    }
     .io-val {
       font-family: 'SF Mono', Monaco, 'Courier New', monospace;
-      font-size: 11px; line-height: 1.55; color: #475569;
-      background: rgba(255,255,255,.75);
-      border: 1px solid rgba(0,0,0,.07); border-radius: 5px;
-      padding: 6px 9px; white-space: pre-wrap; word-break: break-all;
-      max-height: 88px; overflow-y: auto; overscroll-behavior: contain;
+      font-size: 11px;
+      line-height: 1.62;
+      color: #334155;
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 10px 11px;
+      white-space: pre-wrap;
+      word-break: break-word;
+      max-height: 280px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
     }
-    .io-val.expanded { max-height: 240px; }
-    .io-val::-webkit-scrollbar { width: 3px; }
-    .io-val::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 2px; }
+    .io-val.collapsed { max-height: 120px; overflow: hidden; }
+    .io-val::-webkit-scrollbar { width: 5px; }
+    .io-val::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+    .io-fade {
+      position: absolute;
+      left: 1px;
+      right: 1px;
+      bottom: 1px;
+      height: 34px;
+      background: linear-gradient(180deg, rgba(248,250,252,0), #F8FAFC 70%);
+      pointer-events: none;
+    }
+    .io-val-wrap.expanded .io-fade { display: none; }
     .io-more {
-      font-size: 10px; color: #7C3AED; background: none; border: none;
-      cursor: pointer; padding: 2px 0 0 0; display: block;
+      font-size: 10px;
+      color: #4F46E5;
+      background: none;
+      border: none;
+      cursor: pointer;
+      padding: 5px 0 0 2px;
+      display: block;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .06em;
     }
-    .io-more:hover { color: #6D28D9; }
+    .io-more:hover { color: #3730A3; }
 
     .blk-rc-btn {
-      font-size: 9px; font-weight: 600; padding: 2px 7px;
-      border-radius: 8px; border: 1px solid #FECACA; background: #FEF2F2; color: #991B1B;
-      cursor: pointer; flex-shrink: 0;
+      font-size: 9px;
+      font-weight: 700;
+      padding: 3px 8px;
+      border-radius: 999px;
+      border: 1px solid #FCA5A5;
+      background: #FFF1F2;
+      color: #9F1239;
+      cursor: pointer;
+      flex-shrink: 0;
     }
-    .blk-rc-btn:hover { background: #FEE2E2; }
+    .blk-rc-btn:hover { background: #FFE4E6; }
     .blk-rc-btn.selected { background: #EF4444; color: #fff; border-color: #EF4444; }
 
     /* ── Left panel (summary) ────────────────────────────────── */
@@ -494,7 +704,11 @@
 
 <!-- Header -->
 <div id="header">
-  <h1>Progress <span>Annotator</span></h1>
+  <h1>Root Cause <span>Annotator</span></h1>
+  <div id="task-picker">
+    <label for="task-select">Task</label>
+    <select id="task-select"></select>
+  </div>
   <div id="trace-meta">Select a trace from the sidebar</div>
   <div id="auto-save-status"></div>
   <div id="legend">
@@ -631,6 +845,8 @@ function fmtDur(iso) {
 // ================================================================
 // State
 // ================================================================
+let _tasks = [];
+let _currentTask = '';
 let _traceList = [];
 let _currentIdx = -1;
 let _currentData = null;
@@ -654,7 +870,7 @@ let _autoSaveTimer = null;
 // ================================================================
 // Init
 // ================================================================
-document.addEventListener('DOMContentLoaded', () => { loadTraceList(); loadStats(); });
+document.addEventListener('DOMContentLoaded', () => { initTaskSelector(); });
 document.addEventListener('keydown', e => {
   // Ctrl/Cmd+S: save
   if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -670,27 +886,149 @@ document.addEventListener('keydown', e => {
   else if (e.key === 'k' || e.key === 'ArrowLeft') { e.preventDefault(); navTrace(-1); }
   else if (e.key === 's') { e.preventDefault(); saveAnnotation('save'); }
   else if (e.key === 'e') { e.preventDefault(); saveAnnotation('exclude'); }
-  else if (e.key >= '1' && e.key <= '9') {
-    const n = parseInt(e.key);
-    if (_plan.length > 0 && n <= _plan.length) { markRCStep(n); }
-  }
 });
 
+function apiPath(path) {
+  if (!_currentTask) return path;
+  const sep = path.includes('?') ? '&' : '?';
+  return `${path}${sep}task=${encodeURIComponent(_currentTask)}`;
+}
+
+function formatTraceMeta(traceId, annotationPath) {
+  const base = `Task ${_currentTask} · Trace ${traceId}`;
+  return annotationPath ? `${base} · ${annotationPath}` : base;
+}
+
+function resetTracePanels(metaText) {
+  _currentIdx = -1;
+  _currentData = null;
+  _dirty = false;
+  clearTimeout(_autoSaveTimer);
+
+  document.getElementById('trace-meta').textContent = metaText;
+  document.getElementById('save-btn').disabled = true;
+  document.getElementById('prev-btn').disabled = true;
+  document.getElementById('next-btn').disabled = true;
+
+  document.getElementById('spans-empty').style.display = '';
+  document.getElementById('spans-content').style.display = 'none';
+  document.getElementById('spans-content').innerHTML = '';
+
+  document.getElementById('left-empty').style.display = '';
+  document.getElementById('left-content').style.display = 'none';
+  document.getElementById('left-content').innerHTML = '';
+
+  document.getElementById('right-empty').style.display = '';
+  document.getElementById('right-content').style.display = 'none';
+  document.getElementById('right-content').innerHTML = '';
+}
+
+async function initTaskSelector() {
+  const select = document.getElementById('task-select');
+  select.addEventListener('change', async () => {
+    const nextTask = select.value;
+    if (nextTask === _currentTask) return;
+    if (_dirty && !confirm('Unsaved changes. Discard?')) {
+      select.value = _currentTask;
+      return;
+    }
+    _currentTask = nextTask;
+    await refreshTaskData();
+  });
+  await loadTasks();
+}
+
+async function loadTasks() {
+  const select = document.getElementById('task-select');
+  try {
+    const resp = await fetch('/api/tasks');
+    const data = await resp.json();
+    _tasks = data.tasks || [];
+
+    select.innerHTML = '';
+    if (_tasks.length === 0) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No tasks';
+      select.appendChild(opt);
+      select.disabled = true;
+      _currentTask = '';
+      _traceList = [];
+      renderFileList();
+      document.getElementById('progress-text').textContent = '0 / 0 done';
+      document.getElementById('progress-fill').style.width = '0%';
+      resetTracePanels(`No tasks found under ${data.trace_root_dir || 'data/traces'}`);
+      return;
+    }
+
+    _tasks.forEach(task => {
+      const opt = document.createElement('option');
+      opt.value = task;
+      opt.textContent = task;
+      select.appendChild(opt);
+    });
+    select.disabled = false;
+
+    const preferred = data.default_task && _tasks.includes(data.default_task)
+      ? data.default_task
+      : _tasks[0];
+    _currentTask = preferred;
+    select.value = preferred;
+    await refreshTaskData();
+  } catch (e) {
+    _tasks = [];
+    _currentTask = '';
+    select.innerHTML = '<option value="">Load failed</option>';
+    select.disabled = true;
+    _traceList = [];
+    renderFileList();
+    resetTracePanels(`Failed to load tasks: ${e.message}`);
+  }
+}
+
+async function refreshTaskData() {
+  if (!_currentTask) {
+    _traceList = [];
+    renderFileList();
+    document.getElementById('progress-text').textContent = '0 / 0 done';
+    document.getElementById('progress-fill').style.width = '0%';
+    resetTracePanels('Select a task');
+    return;
+  }
+  resetTracePanels(`Task ${_currentTask} · Select a trace from the sidebar`);
+  await loadTraceList();
+  await loadStats();
+}
+
 async function loadTraceList() {
-  const resp = await fetch('/api/traces');
-  _traceList = await resp.json();
+  if (!_currentTask) {
+    _traceList = [];
+    renderFileList();
+    return;
+  }
+  const resp = await fetch(apiPath('/api/traces'));
+  const data = await resp.json();
+  _traceList = Array.isArray(data) ? data : [];
   renderFileList();
+  if (_traceList.length === 0) {
+    document.getElementById('trace-meta').textContent = `Task ${_currentTask} · No traces found`;
+  }
 }
 
 async function loadStats() {
+  if (!_currentTask) return;
   try {
-    const resp = await fetch('/api/traces/stats');
+    const resp = await fetch(apiPath('/api/traces/stats'));
     const s = await resp.json();
+    if (s.error) throw new Error(s.error);
     const done = s.saved + s.excluded;
     document.getElementById('progress-text').textContent = `${done} / ${s.total} done`;
     const pct = s.total > 0 ? Math.round(done / s.total * 100) : 0;
     document.getElementById('progress-fill').style.width = pct + '%';
-  } catch {}
+  } catch (e) {
+    document.getElementById('progress-text').textContent = '— / — done';
+    document.getElementById('progress-fill').style.width = '0%';
+  }
 }
 
 function renderFileList() {
@@ -723,13 +1061,6 @@ function renderFileList() {
     }
     el.appendChild(idRow);
 
-    if (t.summary_preview) {
-      const preview = document.createElement('div');
-      preview.className = 'task-preview';
-      preview.textContent = t.summary_preview;
-      el.appendChild(preview);
-    }
-
     el.addEventListener('click', () => loadTrace(i));
     list.appendChild(el);
   });
@@ -741,15 +1072,21 @@ document.getElementById('search-box').addEventListener('input', renderFileList);
 // Load trace
 // ================================================================
 async function loadTrace(idx) {
+  if (!_currentTask) return;
   if (_dirty && !confirm('Unsaved changes. Discard?')) return;
   _currentIdx = idx;
   const tid = _traceList[idx].trace_id;
-  document.getElementById('trace-meta').textContent = `Loading ${tid}...`;
+  document.getElementById('trace-meta').textContent = `Task ${_currentTask} · Loading ${tid}...`;
 
-  const resp = await fetch(`/api/trace/${tid}`);
+  const resp = await fetch(apiPath(`/api/trace/${tid}`));
   _currentData = await resp.json();
+  if (_currentData.error) {
+    showToast(`Failed: ${_currentData.error}`, 'err');
+    resetTracePanels(`Task ${_currentTask} · Failed to load trace ${tid}`);
+    return;
+  }
 
-  document.getElementById('trace-meta').textContent = `Trace ${tid}`;
+  document.getElementById('trace-meta').textContent = formatTraceMeta(tid, _currentData.annotation_path || '');
   document.getElementById('save-btn').disabled = false;
   document.getElementById('prev-btn').disabled = idx <= 0;
   document.getElementById('next-btn').disabled = idx >= _traceList.length - 1;
@@ -888,15 +1225,19 @@ function buildBlock(span) {
   const isRC = _rootCauseSpanId === span.span_id;
   const iv = getIn(span);
   const ov = getOut(span);
+  const attrs = span.span_attributes || {};
 
   const el = document.createElement('div');
   el.className = 'span-block' + (isRC ? ' root-cause-marked' : '');
   el.style.setProperty('--blk-bd', isRC ? '#EF4444' : c.border);
-  el.style.setProperty('--blk-bg', isRC ? '#FFF5F5' : c.bg);
+  el.style.setProperty('--blk-bg', isRC ? '#FFF1F2' : c.bg);
 
   // Header
   const hdr = document.createElement('div');
   hdr.className = 'blk-hdr';
+
+  const top = document.createElement('div');
+  top.className = 'blk-top';
 
   const badge = document.createElement('span');
   badge.className = 'blk-badge';
@@ -911,16 +1252,14 @@ function buildBlock(span) {
 
   const d = document.createElement('span');
   d.className = 'blk-dur';
-  d.textContent = fmtDur(span.duration);
-
-  hdr.append(badge, nm, d);
+  d.textContent = fmtDur(span.duration) || '—';
 
   const st = span.status_code;
+  let stChip = null;
   if (st && st !== 'Unset') {
-    const sc = document.createElement('span');
-    sc.className = 'blk-status ' + (st === 'Ok' ? 'st-ok' : 'st-error');
-    sc.textContent = st;
-    hdr.appendChild(sc);
+    stChip = document.createElement('span');
+    stChip.className = 'blk-status ' + (String(st).toLowerCase() === 'ok' ? 'st-ok' : 'st-error');
+    stChip.textContent = st;
   }
 
   // Root cause button
@@ -941,15 +1280,71 @@ function buildBlock(span) {
     renderLeft();
     renderRootCauseSection();
   });
-  hdr.appendChild(rcBtn);
+
+  top.append(badge, nm, d);
+  if (stChip) top.appendChild(stChip);
+  top.appendChild(rcBtn);
+  hdr.appendChild(top);
+
+  const meta = document.createElement('div');
+  meta.className = 'blk-meta';
+  meta.appendChild(mkMetaChip(`id ${span.span_id || '?'}`, 'mono'));
+  if (span.parent_span_id) {
+    meta.appendChild(mkMetaChip(`parent ${span.parent_span_id}`, 'mono'));
+  }
+  if (attrs['llm.model_name']) {
+    meta.appendChild(mkMetaChip(attrs['llm.model_name'], 'model'));
+  }
+  if (attrs['llm.token_count.total'] !== undefined && attrs['llm.token_count.total'] !== null && attrs['llm.token_count.total'] !== '') {
+    meta.appendChild(mkMetaChip(`tok ${attrs['llm.token_count.total']}`, 'token'));
+  }
+  if (span.status_message) {
+    meta.appendChild(mkMetaChip(String(span.status_message).slice(0, 80), 'warn'));
+  }
+  hdr.appendChild(meta);
 
   el.appendChild(hdr);
 
-  // IO
+  // IO tabs
   const io = document.createElement('div');
   io.className = 'blk-io';
-  io.appendChild(mkIORow('INPUT', iv, 'lbl-in'));
-  io.appendChild(mkIORow('OUTPUT', ov, 'lbl-out'));
+
+  const tabs = document.createElement('div');
+  tabs.className = 'io-tabs';
+
+  const panes = {
+    input: mkIOPane('INPUT', iv),
+    output: mkIOPane('OUTPUT', ov),
+  };
+
+  const panesWrap = document.createElement('div');
+  panesWrap.appendChild(panes.input);
+  panesWrap.appendChild(panes.output);
+
+  function activateTab(key) {
+    tabs.querySelectorAll('.io-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.tab === key));
+    Object.entries(panes).forEach(([k, pane]) => pane.classList.toggle('active', k === key));
+  }
+
+  function mkTab(labelText, key, hasContent) {
+    const tab = document.createElement('button');
+    tab.type = 'button';
+    tab.dataset.tab = key;
+    tab.className = 'io-tab' + (hasContent ? '' : ' empty');
+    tab.textContent = hasContent ? labelText : `${labelText} · empty`;
+    tab.addEventListener('click', (e) => {
+      e.stopPropagation();
+      activateTab(key);
+    });
+    return tab;
+  }
+
+  tabs.appendChild(mkTab('Input', 'input', !!iv));
+  tabs.appendChild(mkTab('Output', 'output', !!ov));
+
+  io.appendChild(tabs);
+  io.appendChild(panesWrap);
+  activateTab(ov && !iv ? 'output' : 'input');
   el.appendChild(io);
 
   // Click: cross-highlight with summary panel
@@ -962,6 +1357,13 @@ function buildBlock(span) {
   });
 
   return el;
+}
+
+function mkMetaChip(text, cls) {
+  const chip = document.createElement('span');
+  chip.className = 'blk-chip' + (cls ? ` ${cls}` : '');
+  chip.textContent = text;
+  return chip;
 }
 
 function activateSpanEl(spanId) {
@@ -982,45 +1384,86 @@ function activateSummaryEl(spanId) {
   }
 }
 
-function mkIORow(label, raw, lblCls) {
-  const row = document.createElement('div');
-  row.className = 'io-row';
+function mkIOPane(label, raw) {
+  const pane = document.createElement('div');
+  pane.className = 'io-pane';
+
+  const head = document.createElement('div');
+  head.className = 'io-pane-head';
 
   const lbl = document.createElement('div');
-  row.appendChild(lbl);
+  lbl.className = 'io-lbl';
+  lbl.textContent = label;
+  head.appendChild(lbl);
+  pane.appendChild(head);
 
   if (!raw) {
-    lbl.className = 'io-lbl lbl-nil';
-    lbl.textContent = `No ${label.toLowerCase()}`;
-    return row;
+    const empty = document.createElement('div');
+    empty.className = 'no-io';
+    empty.textContent = `No ${label.toLowerCase()} content`;
+    pane.appendChild(empty);
+    return pane;
   }
 
-  lbl.className = `io-lbl ${lblCls}`;
-  lbl.textContent = label;
+  const pretty = prettyVal(raw) || '';
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'io-copy-btn';
+  copyBtn.textContent = 'Copy';
+  copyBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    try {
+      await navigator.clipboard.writeText(pretty);
+      copyBtn.textContent = 'Copied';
+    } catch {
+      copyBtn.textContent = 'Failed';
+    }
+    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 900);
+  });
+  head.appendChild(copyBtn);
 
-  const pretty = prettyVal(raw);
-  const long = pretty.length > 300;
+  const wrap = document.createElement('div');
+  wrap.className = 'io-val-wrap';
 
   const val = document.createElement('div');
   val.className = 'io-val';
   val.textContent = pretty;
-  row.appendChild(val);
+  wrap.appendChild(val);
+  pane.appendChild(wrap);
 
+  // In collapsed mode, wheel should scroll the outer spans panel.
+  val.addEventListener('wheel', (e) => {
+    if (!val.classList.contains('collapsed')) return;
+    const spansPanel = document.getElementById('spans-panel');
+    if (!spansPanel) return;
+    spansPanel.scrollTop += e.deltaY;
+    e.preventDefault();
+  }, { passive: false });
+
+  const long = pretty.length > 420 || pretty.split('\n').length > 8;
   if (long) {
+    val.classList.add('collapsed');
+
+    const fade = document.createElement('div');
+    fade.className = 'io-fade';
+    wrap.appendChild(fade);
+
     const btn = document.createElement('button');
+    btn.type = 'button';
     btn.className = 'io-more';
-    btn.textContent = 'Show more \u2193';
-    let exp = false;
-    btn.addEventListener('click', e => {
+    btn.textContent = 'Expand';
+    let expanded = false;
+    btn.addEventListener('click', (e) => {
       e.stopPropagation();
-      exp = !exp;
-      val.classList.toggle('expanded', exp);
-      btn.textContent = exp ? 'Show less \u2191' : 'Show more \u2193';
+      expanded = !expanded;
+      val.classList.toggle('collapsed', !expanded);
+      wrap.classList.toggle('expanded', expanded);
+      btn.textContent = expanded ? 'Collapse' : 'Expand';
     });
-    row.appendChild(btn);
+    pane.appendChild(btn);
   }
 
-  return row;
+  return pane;
 }
 
 // ================================================================
@@ -1183,41 +1626,15 @@ function renderRight() {
   taskSec.appendChild(taskDiv);
   rc.appendChild(taskSec);
 
-  // 2. Extracted plans (read-only)
-  if (_currentData.extracted_plans && _currentData.extracted_plans.length > 0) {
-    const epSec = mkSection('Extracted Plans', _currentData.extracted_plans.length);
-    _currentData.extracted_plans.forEach((p, i) => {
-      const pDiv = document.createElement('div');
-      pDiv.style.cssText = 'font-size:11px;line-height:1.6;padding:6px 8px;margin-bottom:6px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;';
-      const label = document.createElement('div');
-      label.style.cssText = 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;';
-      label.style.color = p.plan_type === 'revised' ? '#D97706' : '#2563EB';
-      label.textContent = `${p.plan_type} plan (span: ${p.span_id.slice(0,8)}...)`;
-      pDiv.appendChild(label);
-      const text = document.createElement('div');
-      text.style.color = '#475569';
-      text.textContent = p.raw_text.length > 200 ? p.raw_text.slice(0,200) + '...' : p.raw_text;
-      pDiv.appendChild(text);
-      epSec.appendChild(pDiv);
-    });
-    rc.appendChild(epSec);
-  }
-
-  // 3. Finalized plan (editable)
-  const planSec = mkSection('Finalized Plan (Editable)', _plan.length);
-  planSec.id = 'plan-steps-section';
-  renderPlanSteps(planSec);
-  rc.appendChild(planSec);
-
-  // 4. Root cause annotation
+  // 2. Root cause annotation
   renderRootCauseSection(rc);
 
-  // 5. GT annotation (read-only)
+  // 3. GT annotation (read-only)
   if (_currentData.gt_annotation) {
     renderGTSection(rc);
   }
 
-  // 6. Notes
+  // 4. Notes
   const notesSec = mkSection('Notes');
   const notesArea = document.createElement('textarea');
   notesArea.className = 'notes-textarea';
@@ -1227,7 +1644,7 @@ function renderRight() {
   notesSec.appendChild(notesArea);
   rc.appendChild(notesSec);
 
-  // 7. Action buttons (Save / Exclude)
+  // 5. Action buttons (Save / Exclude)
   const actionDiv = document.createElement('div');
   actionDiv.className = 'action-btns';
 
@@ -1378,27 +1795,10 @@ function _buildRCSection() {
   h.textContent = 'Root Cause Annotation';
   sec.appendChild(h);
 
-  // Root cause step (primary IAA field)
-  const stepLabel = document.createElement('div');
-  stepLabel.className = 'rc-label';
-  stepLabel.textContent = 'Root Cause Step';
-  sec.appendChild(stepLabel);
-
-  const stepVal = document.createElement('div');
-  stepVal.className = 'rc-value' + (_rootCauseStep ? '' : ' empty');
-  if (_rootCauseStep) {
-    const matchStep = _plan.find(s => s.step_number === _rootCauseStep);
-    stepVal.textContent = `Step ${_rootCauseStep}` + (matchStep ? `: ${matchStep.description}` : '');
-  } else {
-    stepVal.textContent = 'Click "RC" on a plan step above, or press 1–9';
-  }
-  sec.appendChild(stepVal);
-
   // Span ID
   const rcLabel = document.createElement('div');
   rcLabel.className = 'rc-label';
-  rcLabel.style.marginTop = '8px';
-  rcLabel.textContent = 'Root Cause Span (optional)';
+  rcLabel.textContent = 'Root Cause Span';
   sec.appendChild(rcLabel);
 
   const rcVal = document.createElement('div');
@@ -1524,7 +1924,6 @@ async function saveAnnotation(action, silent) {
   const tid = _currentData.trace_id;
 
   const payload = {
-    finalized_plan: _plan,
     root_cause_step: _rootCauseStep,
     root_cause_span_id: _rootCauseSpanId,
     root_cause_reasoning: _rootCauseReasoning,
@@ -1532,7 +1931,9 @@ async function saveAnnotation(action, silent) {
     notes: _notes,
   };
 
-  const url = action === 'exclude' ? `/api/trace/${tid}/exclude` : `/api/trace/${tid}`;
+  const url = action === 'exclude'
+    ? apiPath(`/api/trace/${tid}/exclude`)
+    : apiPath(`/api/trace/${tid}`);
 
   try {
     const resp = await fetch(url, {
@@ -1547,13 +1948,20 @@ async function saveAnnotation(action, silent) {
       if (action === 'exclude') {
         _traceList[_currentIdx].saved = false;
         _traceList[_currentIdx].excluded = true;
+        _traceList[_currentIdx].annotation_path = result.annotation_path || '';
+        if (_currentData) _currentData.annotation_path = result.annotation_path || '';
         if (!silent) showToast('Excluded!', 'ok');
         if (status) { status.textContent = 'Excluded'; status.style.color = '#DC2626'; }
       } else {
         _traceList[_currentIdx].saved = true;
         _traceList[_currentIdx].excluded = false;
+        _traceList[_currentIdx].annotation_path = result.annotation_path || '';
+        if (_currentData) _currentData.annotation_path = result.annotation_path || '';
         if (!silent) showToast('Saved!', 'ok');
         if (status) { status.textContent = 'Saved ✓'; status.style.color = '#059669'; }
+      }
+      if (_currentData) {
+        document.getElementById('trace-meta').textContent = formatTraceMeta(_currentData.trace_id, _currentData.annotation_path || '');
       }
       renderFileList();
       loadStats();
