@@ -46,7 +46,7 @@ This section standardizes how to read GAIA traces and how to label root cause co
 
 ### 3.1 Trace structure patterns
 
-1. Most traces start with these four spans, which can usually be treated as boilerplate:
+1. All traces start with these four spans, which can usually be treated as boilerplate:
 `main`, `get_examples_to_answere`, `answer_single_question`, `create_single_question`.
 2. `CodeAgent.run` marks the real start of agent execution.
 3. Each span is one agent execution step. Four common span types:
