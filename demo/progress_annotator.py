@@ -18,6 +18,9 @@ import sys
 import os
 import re
 import logging
+import threading
+import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Add project root to path
@@ -97,7 +100,8 @@ annotator_id: str = _cfg.get("annotator_id", "default")
 
 # Directories
 config = ProgressMonitorConfig()
-summary_file = _resolve_path(_cfg.get("summary_file", config.summary_file))
+_summary_file_cfg = str(_cfg.get("summary_file", config.summary_file))
+summary_file = _resolve_path(_summary_file_cfg)
 trace_root_dir = _resolve_path(_cfg.get("trace_root_dir", "data/traces"))
 annotation_dir = _resolve_path(_cfg.get("annotation_dir", config.annotation_dir))
 annotations_root = PROJECT_ROOT / "data" / "annotations"
@@ -106,7 +110,11 @@ _forced_default_task: str | None = None
 
 # Singletons
 plan_extractor = PlanExtractor(llm_client=None)
-_summaries_cache: dict[str, str] | None = None
+_summaries_cache: dict[str, dict[str, str]] = {}
+_summaries_lock = threading.Lock()
+_trace_summarizer = None
+_summary_jobs: dict[str, dict] = {}
+_summary_jobs_lock = threading.Lock()
 
 
 def _clean_summary_preview(summary: str, max_len: int = 120) -> str:
@@ -118,16 +126,162 @@ def _clean_summary_preview(summary: str, max_len: int = 120) -> str:
     return text[:max_len]
 
 
-def _load_summaries() -> dict[str, str]:
-    global _summaries_cache
-    if _summaries_cache is None:
-        if not summary_file.exists():
-            logger.warning("Summary file not found: %s; continue with empty summaries", summary_file)
-            _summaries_cache = {}
-        else:
-            with open(summary_file, "r") as f:
-                _summaries_cache = json.load(f)
-    return _summaries_cache
+def _summary_file_for_task(task_name: str) -> Path:
+    """Resolve the summary file path for a specific task."""
+    if "{task}" in _summary_file_cfg:
+        return _resolve_path(_summary_file_cfg.format(task=task_name))
+    # Default: keep configured filename but isolate by task subdirectory.
+    return summary_file.parent / task_name / summary_file.name
+
+
+def _load_summaries(task_name: str) -> dict[str, str]:
+    with _summaries_lock:
+        if task_name not in _summaries_cache:
+            task_summary_file = _summary_file_for_task(task_name)
+            if not task_summary_file.exists():
+                # Backward compatibility: if old shared summary file exists, load only
+                # this task's trace_ids from it (avoid cross-task contamination).
+                fallback = {}
+                if task_summary_file != summary_file and summary_file.exists():
+                    try:
+                        legacy_raw = json.loads(summary_file.read_text())
+                        if isinstance(legacy_raw, dict):
+                            task_ids = set(_trace_ids_for_task(task_name))
+                            fallback = {
+                                tid: text
+                                for tid, text in legacy_raw.items()
+                                if tid in task_ids and str(text).strip()
+                            }
+                            if fallback:
+                                logger.info(
+                                    "Loaded %d summaries for task '%s' from legacy shared file: %s",
+                                    len(fallback),
+                                    task_name,
+                                    summary_file,
+                                )
+                    except Exception:
+                        logger.exception("Failed reading legacy shared summary file: %s", summary_file)
+
+                if not fallback:
+                    logger.warning(
+                        "Summary file not found for task '%s': %s; continue with empty summaries",
+                        task_name,
+                        task_summary_file,
+                    )
+                _summaries_cache[task_name] = fallback
+            else:
+                with open(task_summary_file, "r") as f:
+                    _summaries_cache[task_name] = json.load(f)
+    return _summaries_cache[task_name]
+
+
+def _save_summaries(task_name: str, summaries: dict[str, str]) -> None:
+    """Persist summaries for a task and refresh cache."""
+    with _summaries_lock:
+        task_summary_file = _summary_file_for_task(task_name)
+        task_summary_file.parent.mkdir(parents=True, exist_ok=True)
+        task_summary_file.write_text(json.dumps(summaries, indent=2, ensure_ascii=False))
+        _summaries_cache[task_name] = summaries
+
+
+def _get_trace_summarizer():
+    """Lazy-init TraceSummarizer to avoid loading LLM deps unless needed."""
+    global _trace_summarizer
+    if _trace_summarizer is not None:
+        return _trace_summarizer
+
+    from src.llm import DEFAULT_MODEL, create_llm_client
+    from src.utils.summarizer import TraceSummarizer
+
+    summary_model = (
+        (_cfg.get("summary_model") or "").strip()
+        or os.environ.get("SUMMARY_MODEL", "").strip()
+        or DEFAULT_MODEL
+    )
+    max_completion_tokens = int(_cfg.get("summary_max_completion_tokens", 8000))
+    client = create_llm_client(
+        model=summary_model,
+        temperature=0.0,
+        max_completion_tokens=max_completion_tokens,
+    )
+    _trace_summarizer = TraceSummarizer(
+        client=client,
+        cache_path=None,
+        max_completion_tokens=max_completion_tokens,
+    )
+    return _trace_summarizer
+
+
+def _generate_summary_for_trace(task_name: str, trace_id: str) -> str:
+    """Generate summary for one trace_id from raw spans."""
+    trace_file = _trace_dir_for_task(task_name) / f"{trace_id}.json"
+    if not trace_file.exists():
+        raise FileNotFoundError(f"Trace not found: {trace_file}")
+
+    with open(trace_file, "r") as f:
+        raw_trace = json.load(f)
+    flat_spans = flatten_spans(raw_trace)
+    if not flat_spans:
+        return ""
+
+    truncation_limit = int(_cfg.get("summary_truncation_limit", 2000))
+    summarizer = _get_trace_summarizer()
+    return summarizer.summarize(flat_spans, truncation_limit=truncation_limit)
+
+
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _run_generate_summaries_job(job_id: str, task_name: str, missing_ids: list[str]) -> None:
+    try:
+        summaries = dict(_load_summaries(task_name))
+        for idx, tid in enumerate(missing_ids, start=1):
+            with _summary_jobs_lock:
+                job = _summary_jobs.get(job_id)
+                if not job:
+                    return
+                job["current_trace_id"] = tid
+                job["processed"] = idx - 1
+
+            try:
+                summary = _generate_summary_for_trace(task_name, tid)
+                if not str(summary).strip():
+                    with _summary_jobs_lock:
+                        _summary_jobs[job_id]["failed"].append({
+                            "trace_id": tid,
+                            "error": "Generated summary is empty",
+                        })
+                else:
+                    summaries[tid] = summary
+                    _save_summaries(task_name, summaries)
+                    with _summary_jobs_lock:
+                        _summary_jobs[job_id]["generated"] += 1
+                        _summary_jobs[job_id]["generated_ids"].append(tid)
+            except Exception as e:
+                logger.exception("Failed to generate summary for %s/%s", task_name, tid)
+                with _summary_jobs_lock:
+                    _summary_jobs[job_id]["failed"].append({
+                        "trace_id": tid,
+                        "error": str(e),
+                    })
+
+            with _summary_jobs_lock:
+                _summary_jobs[job_id]["processed"] = idx
+
+        with _summary_jobs_lock:
+            if job_id in _summary_jobs:
+                _summary_jobs[job_id]["status"] = "completed"
+                _summary_jobs[job_id]["current_trace_id"] = None
+                _summary_jobs[job_id]["finished_at"] = _utc_now_iso()
+    except Exception as e:
+        logger.exception("Summary generation job crashed for task %s", task_name)
+        with _summary_jobs_lock:
+            if job_id in _summary_jobs:
+                _summary_jobs[job_id]["status"] = "failed"
+                _summary_jobs[job_id]["error"] = str(e)
+                _summary_jobs[job_id]["current_trace_id"] = None
+                _summary_jobs[job_id]["finished_at"] = _utc_now_iso()
 
 
 def _list_tasks() -> list[str]:
@@ -301,13 +455,13 @@ def list_tasks():
 
 @app.route("/api/traces")
 def list_traces():
-    """List all trace IDs that have both a summary and a raw trace file."""
+    """List trace IDs for current task with summary preview and annotation status."""
     try:
         task_name = _task_name_from_request()
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    summaries = _load_summaries()
+    summaries = _load_summaries(task_name)
     trace_ids = _trace_ids_for_task(task_name)
     traces = []
     for tid in trace_ids:
@@ -315,9 +469,10 @@ def list_traces():
         saved = annotation is not None and not annotation.get("excluded", False)
         excluded = annotation is not None and annotation.get("excluded", False)
         has_gt = _gt_annotation_path(task_name, tid).exists()
+        summary_text = summaries.get(tid, "")
 
         # Summary preview: first 120 chars
-        summary_preview = _clean_summary_preview(summaries.get(tid, ""), max_len=120)
+        summary_preview = _clean_summary_preview(summary_text, max_len=120)
 
         traces.append({
             "trace_id": tid,
@@ -325,10 +480,126 @@ def list_traces():
             "saved": saved,
             "excluded": excluded,
             "has_gt": has_gt,
+            "has_summary": bool(str(summary_text).strip()),
             "annotation_path": _display_path(annotation_path),
             "summary_preview": summary_preview,
         })
     return jsonify(traces)
+
+
+@app.route("/api/trace/<trace_id>/ensure_summary", methods=["POST"])
+def ensure_trace_summary(trace_id: str):
+    """Generate and persist summary for this trace if missing."""
+    try:
+        task_name = _task_name_from_request()
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+    summaries = dict(_load_summaries(task_name))
+    existing = summaries.get(trace_id, "")
+    if str(existing).strip():
+        return jsonify({
+            "ok": True,
+            "generated": False,
+            "trace_id": trace_id,
+            "summary": existing,
+            "summary_preview": _clean_summary_preview(existing, max_len=120),
+        })
+
+    try:
+        summary = _generate_summary_for_trace(task_name, trace_id)
+    except Exception as e:
+        logger.exception("Failed to generate summary for %s/%s", task_name, trace_id)
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+    if not str(summary).strip():
+        return jsonify({"ok": False, "error": "Generated summary is empty"}), 500
+
+    summaries[trace_id] = summary
+    _save_summaries(task_name, summaries)
+    return jsonify({
+        "ok": True,
+        "generated": True,
+        "trace_id": trace_id,
+        "summary": summary,
+        "summary_preview": _clean_summary_preview(summary, max_len=120),
+    })
+
+
+@app.route("/api/summaries/generate_missing", methods=["POST"])
+def generate_missing_summaries():
+    """Start async job to batch-generate missing summaries for current task."""
+    try:
+        task_name = _task_name_from_request()
+    except ValueError as e:
+        return jsonify({"ok": False, "error": str(e)}), 400
+
+    payload = request.get_json(silent=True) or {}
+    raw_limit = payload.get("limit", request.args.get("limit"))
+    limit = 0
+    if raw_limit not in (None, ""):
+        try:
+            limit = max(0, int(raw_limit))
+        except (TypeError, ValueError):
+            return jsonify({"ok": False, "error": "limit must be an integer"}), 400
+
+    summaries = _load_summaries(task_name)
+    trace_ids = _trace_ids_for_task(task_name)
+    missing_ids = [tid for tid in trace_ids if not str(summaries.get(tid, "")).strip()]
+    total_missing = len(missing_ids)
+    if limit > 0:
+        missing_ids = missing_ids[:limit]
+
+    if not missing_ids:
+        return jsonify({
+            "ok": True,
+            "task": task_name,
+            "job_id": None,
+            "status": "completed",
+            "total_missing": total_missing,
+            "requested": 0,
+            "processed": 0,
+            "generated": 0,
+            "generated_ids": [],
+            "failed": [],
+        })
+
+    job_id = uuid.uuid4().hex
+    job = {
+        "ok": True,
+        "job_id": job_id,
+        "task": task_name,
+        "status": "running",
+        "total_missing": total_missing,
+        "requested": len(missing_ids),
+        "processed": 0,
+        "generated": 0,
+        "generated_ids": [],
+        "failed": [],
+        "current_trace_id": None,
+        "started_at": _utc_now_iso(),
+        "finished_at": None,
+    }
+    with _summary_jobs_lock:
+        _summary_jobs[job_id] = job
+
+    t = threading.Thread(
+        target=_run_generate_summaries_job,
+        args=(job_id, task_name, missing_ids),
+        daemon=True,
+    )
+    t.start()
+
+    return jsonify(job), 202
+
+
+@app.route("/api/summaries/jobs/<job_id>")
+def get_summary_job(job_id: str):
+    with _summary_jobs_lock:
+        job = _summary_jobs.get(job_id)
+        if not job:
+            return jsonify({"ok": False, "error": f"job not found: {job_id}"}), 404
+        return jsonify(job)
 
 
 @app.route("/api/traces/stats")
@@ -362,7 +633,7 @@ def get_trace(trace_id: str):
     except ValueError as e:
         return jsonify({"error": str(e)}), 400
 
-    summaries = _load_summaries()
+    summaries = _load_summaries(task_name)
     summary = summaries.get(trace_id, "")
 
     # Load raw trace
@@ -541,14 +812,20 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     tasks = _list_tasks()
+    default_task = _default_task_name()
 
     print(f"Annotator ID:   {annotator_id}")
-    print(f"Summary file:   {summary_file}")
+    print(f"Summary base:   {summary_file}")
+    if default_task:
+        print(f"Summary file:   {_summary_file_for_task(default_task)} (default task)")
     print(f"Trace root:     {trace_root_dir}")
     print(f"Save dirs:      data/traces/{{task}}/saved  |  data/traces/{{task}}/excluded")
     print(f"Legacy save:    {legacy_save_root_dir}")
-    print(f"Default task:   {_default_task_name()}")
+    print(f"Default task:   {default_task}")
     print(f"Tasks found:    {len(tasks)} ({', '.join(tasks) if tasks else 'none'})")
     print(f"Port:           {args.port}")
-    print(f"Summaries:      {len(_load_summaries())}")
+    if default_task:
+        print(f"Summaries:      {len(_load_summaries(default_task))} (default task)")
+    else:
+        print("Summaries:      0")
     app.run(debug=True, port=args.port)

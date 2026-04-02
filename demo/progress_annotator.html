@@ -76,6 +76,8 @@
     .hdr-btn:disabled { opacity: .5; cursor: not-allowed; }
     #save-btn { background: #059669; }
     #save-btn:hover:not(:disabled) { background: #047857; }
+    #gen-summary-btn { background: #0EA5E9; }
+    #gen-summary-btn:hover:not(:disabled) { background: #0284C7; }
     #prev-btn, #next-btn { background: #6366F1; }
     #prev-btn:hover:not(:disabled), #next-btn:hover:not(:disabled) { background: #4F46E5; }
 
@@ -216,6 +218,24 @@
     #spans-content::-webkit-scrollbar { width: 5px; }
     #spans-content::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 3px; }
     #spans-empty { flex: 1; height: auto; }
+    #spans-task-desc-label {
+      display: none;
+      padding: 4px 12px 0 12px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748B;
+      flex-shrink: 0;
+    }
+    #spans-task-desc {
+      display: none;
+      padding: 2px 12px 8px 12px;
+      font-size: 12px;
+      line-height: 1.65;
+      color: #475569;
+      white-space: pre-wrap;
+      word-break: break-word;
+      flex-shrink: 0;
+    }
 
     .span-block {
       border: none;
@@ -255,7 +275,7 @@
       min-width: 0;
     }
     .blk-name {
-      font-size: 12px;
+      font-size: 12.5px;
       font-weight: 700;
       font-family: inherit;
       color: #475569;
@@ -355,12 +375,17 @@
       padding: 2px 0 0 0;
       white-space: pre-wrap;
       word-break: break-word;
-      max-height: 280px;
-      overflow-y: auto;
-      overscroll-behavior: contain;
+      max-height: none;
+      overflow: visible;
+      overscroll-behavior: auto;
       box-shadow: none;
     }
     .io-val.collapsed { max-height: 120px; overflow: hidden; }
+    .io-val-wrap.expanded .io-val {
+      max-height: 280px;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+    }
     .io-val::-webkit-scrollbar { width: 5px; }
     .io-val::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
     .io-fade { display: none; }
@@ -402,7 +427,7 @@
       font-size: 12px;
       font-weight: 500;
       border-radius: 8px;
-      border: 1px solid transparent;
+      border: none;
       background: transparent;
       color: #64748B;
       padding: 4px 10px;
@@ -415,8 +440,7 @@
     .detail-tab.active {
       background: #FFFFFF;
       color: #334155;
-      border-color: #CBD5E1;
-      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+      box-shadow: none;
     }
     #detail-views {
       flex: 1;
@@ -517,14 +541,6 @@
     .section-title .count {
       font-size: 9px; font-weight: 700; padding: 1px 6px;
       border-radius: 8px; background: #EFF6FF; color: #1D4ED8;
-    }
-
-    /* Task description */
-    .task-desc {
-      font-size: 13px; line-height: 1.7; color: #334155;
-      background: #F8FAFC; border: 1px solid #E2E8F0;
-      border-radius: 6px; padding: 10px 12px;
-      white-space: pre-wrap; word-break: break-word;
     }
 
     /* Plan steps (editable) */
@@ -682,6 +698,7 @@
     <div class="leg" style="background:#FFFBEB;color:#92400E;border:1px solid #FDE68A"><span class="leg-dot" style="background:#D97706"></span>TOOL</div>
     <div class="leg" style="background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0"><span class="leg-dot" style="background:#059669"></span>CHAIN</div>
   </div>
+  <button class="hdr-btn" id="gen-summary-btn" onclick="generateMissingSummaries()">Gen Missing Summary</button>
   <button class="hdr-btn" id="prev-btn" disabled onclick="navTrace(-1)">Prev</button>
   <button class="hdr-btn" id="next-btn" disabled onclick="navTrace(1)">Next</button>
   <button class="hdr-btn" id="save-btn" disabled onclick="saveAnnotation()">Save (Ctrl+S)</button>
@@ -703,6 +720,8 @@
   <!-- Spans: trace span tree (matches trace_viewer left panel) -->
   <div id="spans-panel">
     <div class="panel-title">Trace Spans</div>
+    <div id="spans-task-desc-label">Task Description</div>
+    <div id="spans-task-desc"></div>
     <div class="panel-empty" id="spans-empty">
       <div class="panel-empty-icon">&#128203;</div>
       <div>Select a trace to see spans</div>
@@ -832,6 +851,8 @@ let _notes = '';
 
 // auto-save
 let _autoSaveTimer = null;
+let _summaryJobPollTimer = null;
+let _summaryJobId = null;
 
 function switchDetailTab(tab) {
   _detailTab = tab === 'annotation' ? 'annotation' : 'summary';
@@ -891,6 +912,12 @@ function resetTracePanels(metaText) {
   document.getElementById('save-btn').disabled = true;
   document.getElementById('prev-btn').disabled = true;
   document.getElementById('next-btn').disabled = true;
+
+  const spansTaskDescLabel = document.getElementById('spans-task-desc-label');
+  spansTaskDescLabel.style.display = 'none';
+  const spansTaskDesc = document.getElementById('spans-task-desc');
+  spansTaskDesc.textContent = '';
+  spansTaskDesc.style.display = 'none';
 
   document.getElementById('spans-empty').style.display = '';
   document.getElementById('spans-content').style.display = 'none';
@@ -1013,6 +1040,98 @@ async function loadStats() {
   }
 }
 
+function resetGenerateSummaryBtn() {
+  const btn = document.getElementById('gen-summary-btn');
+  if (!btn) return;
+  btn.disabled = false;
+  btn.textContent = 'Gen Missing Summary';
+}
+
+function stopSummaryJobPolling() {
+  if (_summaryJobPollTimer) {
+    clearTimeout(_summaryJobPollTimer);
+    _summaryJobPollTimer = null;
+  }
+  _summaryJobId = null;
+}
+
+async function pollSummaryJob(jobId) {
+  try {
+    const resp = await fetch(apiPath(`/api/summaries/jobs/${jobId}`));
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || `Failed to fetch summary progress for job ${jobId}`);
+    }
+
+    const requested = data.requested || 0;
+    const processed = data.processed || 0;
+    const pct = requested > 0 ? Math.min(100, Math.round(processed / requested * 100)) : 100;
+    const btn = document.getElementById('gen-summary-btn');
+    if (btn) btn.textContent = `Generating ${processed}/${requested} (${pct}%)`;
+
+    if (data.status === 'running') {
+      const traceHint = data.current_trace_id ? ` · ${String(data.current_trace_id).slice(0, 16)}` : '';
+      document.getElementById('trace-meta').textContent = `Task ${_currentTask} · Generating summaries ${processed}/${requested}${traceHint}`;
+      _summaryJobPollTimer = setTimeout(() => pollSummaryJob(jobId), 1200);
+      return;
+    }
+
+    stopSummaryJobPolling();
+    resetGenerateSummaryBtn();
+    await loadTraceList();
+    await loadStats();
+
+    if (data.status !== 'completed') {
+      showToast(`Summary job ${data.status || 'failed'}`, 'err');
+      return;
+    }
+
+    const failedCount = (data.failed || []).length;
+    if (failedCount > 0) {
+      showToast(`Generated ${data.generated}/${requested}, failed ${failedCount}`, 'err');
+    } else {
+      showToast(`Generated ${data.generated} summaries`, 'ok');
+    }
+    document.getElementById('trace-meta').textContent = `Task ${_currentTask} · Summary generation completed`;
+  } catch (e) {
+    stopSummaryJobPolling();
+    resetGenerateSummaryBtn();
+    showToast(`Summary progress failed: ${e.message}`, 'err');
+  }
+}
+
+async function generateMissingSummaries() {
+  if (!_currentTask) return;
+  const btn = document.getElementById('gen-summary-btn');
+  if (!btn) return;
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+  try {
+    const resp = await fetch(apiPath('/api/summaries/generate_missing'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = await resp.json();
+    if (!resp.ok || !data.ok) {
+      throw new Error(data.error || 'Failed to start summary generation');
+    }
+
+    if (!data.requested) {
+      resetGenerateSummaryBtn();
+      showToast('No missing summaries', 'ok');
+      return;
+    }
+
+    _summaryJobId = data.job_id;
+    await pollSummaryJob(_summaryJobId);
+  } catch (e) {
+    stopSummaryJobPolling();
+    resetGenerateSummaryBtn();
+    showToast(`Generate failed: ${e.message}`, 'err');
+  }
+}
+
 function renderFileList() {
   const q = document.getElementById('search-box').value.toLowerCase();
   const list = document.getElementById('file-list');
@@ -1072,6 +1191,13 @@ async function loadTrace(idx) {
   document.getElementById('save-btn').disabled = false;
   document.getElementById('prev-btn').disabled = idx <= 0;
   document.getElementById('next-btn').disabled = idx >= _traceList.length - 1;
+
+  const spansTaskDescLabel = document.getElementById('spans-task-desc-label');
+  const spansTaskDesc = document.getElementById('spans-task-desc');
+  const taskDesc = (_currentData.task_description || '').trim();
+  spansTaskDescLabel.style.display = taskDesc ? 'block' : 'none';
+  spansTaskDesc.textContent = taskDesc;
+  spansTaskDesc.style.display = taskDesc ? 'block' : 'none';
 
   // Initialize annotation state from saved or defaults
   if (_currentData.saved_annotation) {
@@ -1374,16 +1500,6 @@ function mkIOPane(label, raw) {
   wrap.appendChild(val);
   pane.appendChild(wrap);
 
-  // If the IO box cannot scroll itself, route wheel to the outer spans panel.
-  val.addEventListener('wheel', (e) => {
-    const spansPanel = document.getElementById('spans-content') || document.getElementById('spans-panel');
-    if (!spansPanel) return;
-    const selfScrollable = val.scrollHeight > val.clientHeight + 1;
-    if (selfScrollable && !val.classList.contains('collapsed')) return;
-    spansPanel.scrollTop += e.deltaY;
-    e.preventDefault();
-  }, { passive: false });
-
   const long = pretty.length > 420 || pretty.split('\n').length > 8;
   if (long) {
     val.classList.add('collapsed');
@@ -1558,23 +1674,15 @@ function renderRight() {
   rc.style.display = 'block';
   rc.innerHTML = '';
 
-  // 1. Task description
-  const taskSec = mkSection('Task Description');
-  const taskDiv = document.createElement('div');
-  taskDiv.className = 'task-desc';
-  taskDiv.textContent = _currentData.task_description;
-  taskSec.appendChild(taskDiv);
-  rc.appendChild(taskSec);
-
-  // 2. Root cause annotation
+  // 1. Root cause annotation
   renderRootCauseSection(rc);
 
-  // 3. GT annotation (read-only)
+  // 2. GT annotation (read-only)
   if (_currentData.gt_annotation) {
     renderGTSection(rc);
   }
 
-  // 4. Notes
+  // 3. Notes
   const notesSec = mkSection('Notes');
   const notesArea = document.createElement('textarea');
   notesArea.className = 'notes-textarea';
@@ -1584,7 +1692,7 @@ function renderRight() {
   notesSec.appendChild(notesArea);
   rc.appendChild(notesSec);
 
-  // 5. Action buttons (Save / Exclude)
+  // 4. Action buttons (Save / Exclude)
   const actionDiv = document.createElement('div');
   actionDiv.className = 'action-btns';
 
