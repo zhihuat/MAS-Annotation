@@ -1,0 +1,41 @@
+{
+  "trace_id": "0035f455b3ff2295167a844f04d85d34",
+  "finalized_plan": [
+    {
+      "depends_on": [],
+      "description": "confirm the species is clownfish",
+      "step_number": 1
+    },
+    {
+      "depends_on": [],
+      "description": "retrieve USGS NAS database records for nonnative clownfish occurrences before 2020",
+      "step_number": 2
+    },
+    {
+      "depends_on": [],
+      "description": "identify specific locations",
+      "step_number": 3
+    },
+    {
+      "depends_on": [],
+      "description": "translate locations to five-digit zip codes",
+      "step_number": 4
+    },
+    {
+      "depends_on": [],
+      "description": "format as comma-separated string",
+      "step_number": 5
+    },
+    {
+      "depends_on": [],
+      "description": "verify and provide final answer",
+      "step_number": 6
+    }
+  ],
+  "root_cause_step": null,
+  "root_cause_span_id": "bc20feefb97e11e5",
+  "root_cause_reasoning": "The agent did not actually confirm that clownfish is the target species, nor did it actually query the USGS NAS database.",
+  "step_annotations": [],
+  "notes": "",
+  "excluded": false
+}

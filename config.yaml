@@ -1,0 +1,8 @@
+# Annotator ID — set this to your name before running.
+# Annotations are saved to data/annotations/{annotator_id}/
+annotator_id: zhihuat
+
+# Data paths (relative to project root)
+summary_file: data/trace_summary/claude-haiku-4-5-20251001/trace_summaries.json
+trace_dir: data/GAIA
+annotation_dir: data/gt_annotations

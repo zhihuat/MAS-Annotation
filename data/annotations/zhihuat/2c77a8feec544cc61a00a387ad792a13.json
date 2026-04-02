@@ -1,0 +1,36 @@
+{
+  "trace_id": "2c77a8feec544cc61a00a387ad792a13",
+  "finalized_plan": [
+    {
+      "depends_on": [],
+      "description": "use search_agent to locate an authoritative formatted version of the poem",
+      "step_number": 1
+    },
+    {
+      "depends_on": [],
+      "description": "retrieve and inspect the text for stanza layout and formatting",
+      "step_number": 2
+    },
+    {
+      "depends_on": [],
+      "description": "analyze each stanza to identify indentation",
+      "step_number": 3
+    },
+    {
+      "depends_on": [],
+      "description": "verify findings with a secondary source, and",
+      "step_number": 4
+    },
+    {
+      "depends_on": [],
+      "description": "provide the final answer",
+      "step_number": 5
+    }
+  ],
+  "root_cause_step": null,
+  "root_cause_span_id": "c85874e8576e990b",
+  "root_cause_reasoning": "The system failed to invoke the search_agent",
+  "step_annotations": [],
+  "notes": "",
+  "excluded": false
+}

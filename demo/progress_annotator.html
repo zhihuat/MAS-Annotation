@@ -1,0 +1,1577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Progress Annotator</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #F8FAFC;
+      color: #334155;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* ── Header ──────────────────────────────────────────────── */
+    #header {
+      height: 50px;
+      background: #fff;
+      border-bottom: 1px solid #E2E8F0;
+      display: flex;
+      align-items: center;
+      padding: 0 16px;
+      gap: 10px;
+      flex-shrink: 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,.04);
+    }
+    #header h1 { font-size: 15px; font-weight: 700; color: #0F172A; white-space: nowrap; }
+    #header h1 span { color: #7C3AED; }
+    #trace-meta {
+      flex: 1;
+      font-size: 11px;
+      color: #94A3B8;
+      font-family: monospace;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .hdr-btn {
+      padding: 5px 13px; color: #fff; border: none;
+      border-radius: 6px; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+    }
+    .hdr-btn:disabled { opacity: .5; cursor: not-allowed; }
+    #save-btn { background: #059669; }
+    #save-btn:hover:not(:disabled) { background: #047857; }
+    #prev-btn, #next-btn { background: #6366F1; }
+    #prev-btn:hover:not(:disabled), #next-btn:hover:not(:disabled) { background: #4F46E5; }
+
+    /* ── Three columns ───────────────────────────────────────── */
+    #col-headers {
+      display: flex;
+      border-bottom: 1px solid #E2E8F0;
+      background: #FAFAFA;
+      flex-shrink: 0;
+    }
+    .col-hdr {
+      padding: 7px 16px;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #94A3B8;
+      border-right: 1px solid #E2E8F0;
+    }
+    .col-hdr:last-child { border-right: none; }
+    .col-hdr-sidebar { width: 220px; flex-shrink: 0; }
+    .col-hdr-spans { flex: 1; }
+    .col-hdr-left { flex: 1; }
+    .col-hdr-right { flex: 1; }
+
+    #main { flex: 1; display: flex; overflow: hidden; }
+
+    /* ── Sidebar (file list) ─────────────────────────────────── */
+    #sidebar {
+      width: 220px;
+      flex-shrink: 0;
+      overflow-y: auto;
+      background: #F1F5F9;
+      border-right: 1px solid #E2E8F0;
+    }
+    #sidebar::-webkit-scrollbar { width: 5px; }
+    #sidebar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+
+    #search-box {
+      width: 100%;
+      padding: 8px 10px;
+      font-size: 12px;
+      border: none;
+      border-bottom: 1px solid #E2E8F0;
+      background: #fff;
+      outline: none;
+    }
+    #search-box::placeholder { color: #94A3B8; }
+
+    #progress-counter {
+      padding: 6px 10px;
+      font-size: 11px;
+      font-weight: 700;
+      color: #64748B;
+      background: #F8FAFC;
+      border-bottom: 1px solid #E2E8F0;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    #progress-bar {
+      flex: 1; height: 4px; background: #E2E8F0; border-radius: 2px; overflow: hidden;
+    }
+    #progress-fill { height: 100%; background: #059669; border-radius: 2px; transition: width 0.3s; }
+
+    .task-preview {
+      font-size: 10px; color: #94A3B8; line-height: 1.4;
+      overflow: hidden; text-overflow: ellipsis;
+      display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+      margin-top: 2px;
+    }
+
+    #auto-save-status {
+      font-size: 10px; color: #94A3B8; padding: 0 4px;
+    }
+
+    .plan-step-rc {
+      font-size: 9px; font-weight: 700; padding: 2px 7px;
+      border-radius: 8px; border: 1px solid #E2E8F0; background: #F8FAFC; color: #94A3B8;
+      cursor: pointer; flex-shrink: 0; white-space: nowrap;
+    }
+    .plan-step-rc:hover { border-color: #6366F1; color: #6366F1; background: #EEF2FF; }
+    .plan-step-rc.selected { background: #6366F1; color: #fff; border-color: #6366F1; }
+    .plan-step.rc-step { background: #EEF2FF; border-color: #6366F1; }
+
+    .file-item {
+      padding: 7px 10px;
+      font-size: 11px;
+      font-family: monospace;
+      cursor: pointer;
+      border-bottom: 1px solid #F1F5F9;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .file-item:hover { background: #E2E8F0; }
+    .file-item.active { background: #DBEAFE; font-weight: 700; }
+    .file-item .badge {
+      font-size: 8px; font-weight: 700; padding: 1px 5px;
+      border-radius: 8px; flex-shrink: 0;
+    }
+    .badge-saved { background: #D1FAE5; color: #065F46; cursor: pointer; }
+    .badge-saved:hover { background: #A7F3D0; }
+    .badge-saved::after { content: ' ✎'; font-size: 10px; }
+    .badge-excluded { background: #FEE2E2; color: #991B1B; }
+    .badge-gt { background: #FEF3C7; color: #92400E; }
+
+    /* ── Spans panel (trace_viewer left panel) ─────────────────── */
+    #spans-panel {
+      flex: 1;
+      overflow-y: auto;
+      background: #F8FAFC;
+      border-right: 1px solid #E2E8F0;
+    }
+    #spans-panel::-webkit-scrollbar { width: 5px; }
+    #spans-panel::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 3px; }
+    #spans-content { padding: 10px 0 24px 0; }
+
+    .span-block {
+      border-left: 4px solid var(--blk-bd);
+      background: var(--blk-bg);
+      margin: 8px 14px;
+      border-radius: 6px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: box-shadow 0.12s;
+    }
+    .span-block:hover { box-shadow: 0 2px 10px rgba(0,0,0,.09); }
+    .span-block.active {
+      box-shadow: 0 0 0 2px var(--blk-bd), 0 4px 12px rgba(0,0,0,.12);
+      z-index: 1; position: relative;
+    }
+    .span-block.root-cause-marked {
+      border-left-color: #EF4444 !important;
+      background: #FFF5F5 !important;
+      box-shadow: inset 0 0 0 1px rgba(239,68,68,.15);
+    }
+
+    .blk-hdr {
+      display: flex; align-items: center; gap: 8px;
+      padding: 9px 12px; border-bottom: 1px solid rgba(0,0,0,.06);
+    }
+    .blk-badge {
+      font-size: 8px; font-weight: 900; letter-spacing: .07em;
+      padding: 2px 6px; border-radius: 3px; flex-shrink: 0;
+    }
+    .blk-name {
+      font-size: 13px; font-weight: 600; font-family: monospace;
+      color: #1E293B; flex: 1;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .blk-dur { font-size: 10px; color: #94A3B8; flex-shrink: 0; }
+    .blk-status {
+      font-size: 9px; font-weight: 600; padding: 1px 6px;
+      border-radius: 8px; flex-shrink: 0;
+    }
+    .st-ok    { background: #ECFDF5; color: #065F46; }
+    .st-error { background: #FEF2F2; color: #991B1B; }
+
+    .blk-io { padding: 8px 12px 10px 12px; }
+    .io-row { margin-bottom: 6px; }
+    .io-row:last-child { margin-bottom: 0; }
+    .io-lbl {
+      font-size: 9px; font-weight: 700;
+      text-transform: uppercase; letter-spacing: .1em; margin-bottom: 3px;
+    }
+    .lbl-in  { color: #2563EB; }
+    .lbl-out { color: #059669; }
+    .lbl-nil { color: #CBD5E1; font-style: italic; font-weight: 400; text-transform: none; letter-spacing: 0; }
+    .io-val {
+      font-family: 'SF Mono', Monaco, 'Courier New', monospace;
+      font-size: 11px; line-height: 1.55; color: #475569;
+      background: rgba(255,255,255,.75);
+      border: 1px solid rgba(0,0,0,.07); border-radius: 5px;
+      padding: 6px 9px; white-space: pre-wrap; word-break: break-all;
+      max-height: 88px; overflow-y: auto; overscroll-behavior: contain;
+    }
+    .io-val.expanded { max-height: 240px; }
+    .io-val::-webkit-scrollbar { width: 3px; }
+    .io-val::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 2px; }
+    .io-more {
+      font-size: 10px; color: #7C3AED; background: none; border: none;
+      cursor: pointer; padding: 2px 0 0 0; display: block;
+    }
+    .io-more:hover { color: #6D28D9; }
+
+    .blk-rc-btn {
+      font-size: 9px; font-weight: 600; padding: 2px 7px;
+      border-radius: 8px; border: 1px solid #FECACA; background: #FEF2F2; color: #991B1B;
+      cursor: pointer; flex-shrink: 0;
+    }
+    .blk-rc-btn:hover { background: #FEE2E2; }
+    .blk-rc-btn.selected { background: #EF4444; color: #fff; border-color: #EF4444; }
+
+    /* ── Left panel (summary) ────────────────────────────────── */
+    #left-panel {
+      flex: 1;
+      overflow-y: auto;
+      background: #FFFFFF;
+      border-right: 1px solid #E2E8F0;
+    }
+    #left-panel::-webkit-scrollbar { width: 5px; }
+    #left-panel::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 3px; }
+    #left-content { padding: 10px 0 24px 0; }
+
+    .panel-empty {
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      color: #CBD5E1;
+      font-size: 13px;
+      padding: 40px;
+    }
+    .panel-empty-icon { font-size: 36px; }
+
+    /* ── Summary entry (from trace_viewer.html right panel) ─── */
+    .se {
+      border-left: 3px solid var(--se-bd);
+      background: var(--se-bg);
+      border-radius: 0 6px 6px 0;
+      padding: 8px 14px;
+      cursor: pointer;
+      transition: box-shadow 0.12s;
+    }
+    .se:hover { box-shadow: 0 1px 6px rgba(0,0,0,.08); }
+    .se.active {
+      box-shadow: 0 0 0 1.5px var(--se-bd), 0 3px 10px rgba(0,0,0,.1);
+      position: relative; z-index: 1;
+    }
+    .se.root-cause-marked {
+      border-left-color: #EF4444 !important;
+      background: #FFF5F5 !important;
+      box-shadow: inset 0 0 0 1px rgba(239,68,68,.15);
+    }
+
+    .se-hdr { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
+    .se-dot  { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+    .se-name {
+      font-size: 12.5px; font-weight: 700; font-family: monospace;
+      color: #1E293B; flex: 1;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .se-id {
+      font-size: 9px; color: #94A3B8; font-family: monospace;
+      background: #F1F5F9; padding: 1px 5px; border-radius: 3px;
+      flex-shrink: 0; user-select: all;
+    }
+    .se-dur { font-size: 10px; color: #94A3B8; flex-shrink: 0; }
+    .se-text { font-size: 13px; line-height: 1.68; color: #475569; }
+
+    .se-collapse-btn {
+      background: none; border: none; cursor: pointer;
+      padding: 0 3px; font-size: 8px; color: #94A3B8;
+      line-height: 1; flex-shrink: 0; user-select: none;
+    }
+    .se-collapse-btn:hover { color: #475569; }
+    .se[data-collapsed="true"] .se-text { display: none; }
+
+    .se-rc-btn {
+      font-size: 9px; font-weight: 600; padding: 2px 7px;
+      border-radius: 8px; border: 1px solid #FECACA; background: #FEF2F2; color: #991B1B;
+      cursor: pointer; flex-shrink: 0;
+    }
+    .se-rc-btn:hover { background: #FEE2E2; }
+    .se-rc-btn.selected { background: #EF4444; color: #fff; border-color: #EF4444; }
+
+    /* ── Right panel (annotation) ────────────────────────────── */
+    #right-panel {
+      flex: 1;
+      overflow-y: auto;
+      background: #F8FAFC;
+    }
+    #right-panel::-webkit-scrollbar { width: 5px; }
+    #right-panel::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 3px; }
+    #right-content { padding: 16px; }
+
+    /* Sections */
+    .section {
+      background: #fff;
+      border: 1px solid #E2E8F0;
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .section-title {
+      font-size: 12px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .08em; color: #64748B; margin-bottom: 10px;
+      display: flex; align-items: center; gap: 8px;
+    }
+    .section-title .count {
+      font-size: 9px; font-weight: 700; padding: 1px 6px;
+      border-radius: 8px; background: #EFF6FF; color: #1D4ED8;
+    }
+
+    /* Task description */
+    .task-desc {
+      font-size: 13px; line-height: 1.7; color: #334155;
+      background: #F8FAFC; border: 1px solid #E2E8F0;
+      border-radius: 6px; padding: 10px 12px;
+      white-space: pre-wrap; word-break: break-word;
+    }
+
+    /* Plan steps (editable) */
+    .plan-step {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      background: #F8FAFC;
+      border: 1px solid #E2E8F0;
+      border-radius: 6px;
+    }
+    .plan-step:hover { border-color: #CBD5E1; }
+    .plan-step-num {
+      font-size: 12px; font-weight: 700; color: #6366F1;
+      min-width: 28px; text-align: center; padding-top: 2px;
+    }
+    .plan-step-desc {
+      flex: 1; font-size: 12px; line-height: 1.5; color: #334155;
+      border: none; background: transparent; resize: vertical;
+      min-height: 24px; font-family: inherit; outline: none;
+      padding: 2px 0;
+    }
+    .plan-step-desc:focus { background: #fff; border-radius: 3px; }
+    .plan-step-deps {
+      font-size: 10px; color: #94A3B8; flex-shrink: 0;
+    }
+    .plan-step-del {
+      font-size: 14px; color: #CBD5E1; background: none; border: none;
+      cursor: pointer; padding: 0 2px; flex-shrink: 0;
+    }
+    .plan-step-del:hover { color: #EF4444; }
+    .add-step-btn {
+      font-size: 11px; color: #6366F1; background: none;
+      border: 1px dashed #6366F1; border-radius: 6px;
+      padding: 6px 12px; cursor: pointer; width: 100%;
+    }
+    .add-step-btn:hover { background: #EFF6FF; }
+
+    /* Root cause annotation */
+    .rc-section { background: #FFF5F5; border-color: #FECACA; }
+    .rc-label { font-size: 11px; color: #991B1B; font-weight: 600; margin-bottom: 4px; }
+    .rc-value {
+      font-size: 12px; color: #334155; background: #fff;
+      border: 1px solid #E2E8F0; border-radius: 6px; padding: 8px 10px;
+      margin-bottom: 8px;
+    }
+    .rc-value.empty { color: #94A3B8; font-style: italic; }
+    textarea.rc-textarea {
+      width: 100%; min-height: 60px; font-size: 12px; line-height: 1.6;
+      font-family: inherit; border: 1px solid #E2E8F0; border-radius: 6px;
+      padding: 8px 10px; resize: vertical; color: #334155; outline: none;
+    }
+    textarea.rc-textarea:focus { border-color: #6366F1; }
+
+    /* Step annotations table */
+    .step-annot-table {
+      width: 100%; border-collapse: collapse; font-size: 11px;
+    }
+    .step-annot-table th {
+      text-align: left; padding: 6px 8px; font-weight: 700; color: #64748B;
+      border-bottom: 2px solid #E2E8F0; font-size: 10px;
+      text-transform: uppercase; letter-spacing: .05em;
+    }
+    .step-annot-table td {
+      padding: 6px 8px; border-bottom: 1px solid #F1F5F9; vertical-align: top;
+    }
+    .step-annot-table tr:hover td { background: #F8FAFC; }
+    .step-annot-select {
+      font-size: 11px; padding: 2px 4px; border: 1px solid #E2E8F0;
+      border-radius: 4px; background: #fff;
+    }
+
+    /* GT causal chain display */
+    .gt-chain {
+      background: #FFFBEB; border: 1px solid #FDE68A;
+      border-radius: 6px; padding: 10px 12px; margin-bottom: 8px;
+    }
+    .gt-chain-title {
+      font-size: 10px; font-weight: 700; color: #92400E;
+      text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px;
+    }
+    .gt-span {
+      font-size: 11px; line-height: 1.6; padding: 4px 0;
+      border-bottom: 1px solid #FDE68A;
+    }
+    .gt-span:last-child { border-bottom: none; }
+    .gt-span-role {
+      font-size: 9px; font-weight: 700; padding: 1px 5px;
+      border-radius: 4px; margin-right: 4px;
+    }
+    .gt-role-root { background: #FEE2E2; color: #991B1B; }
+    .gt-role-symptom { background: #FEF3C7; color: #92400E; }
+    .gt-span-id { font-family: monospace; font-size: 10px; color: #64748B; }
+    .gt-span-cat { font-weight: 600; color: #334155; }
+    .gt-span-desc { color: #475569; }
+
+    /* Notes */
+    .notes-textarea {
+      width: 100%; min-height: 50px; font-size: 12px; line-height: 1.6;
+      font-family: inherit; border: 1px solid #E2E8F0; border-radius: 6px;
+      padding: 8px 10px; resize: vertical; color: #334155; outline: none;
+    }
+    .notes-textarea:focus { border-color: #6366F1; }
+
+    /* Action buttons (save/exclude) */
+    .action-btns {
+      display: flex; gap: 10px; margin-top: 4px;
+    }
+    .action-btn {
+      flex: 1; padding: 10px 16px; border: none; border-radius: 8px;
+      font-size: 13px; font-weight: 700; cursor: pointer;
+      transition: background 0.15s;
+    }
+    .action-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .action-btn-save { background: #059669; color: #fff; }
+    .action-btn-save:hover:not(:disabled) { background: #047857; }
+    .action-btn-exclude { background: #DC2626; color: #fff; }
+    .action-btn-exclude:hover:not(:disabled) { background: #B91C1C; }
+
+    /* Toast */
+    #toast {
+      position: fixed; bottom: 20px; right: 20px;
+      padding: 10px 20px; border-radius: 8px; font-size: 13px; font-weight: 600;
+      color: #fff; z-index: 1000; display: none;
+      box-shadow: 0 4px 12px rgba(0,0,0,.15);
+    }
+    .toast-ok { background: #059669; }
+    .toast-err { background: #DC2626; }
+
+    /* Legend */
+    #legend { display: flex; gap: 7px; flex-shrink: 0; }
+    .leg {
+      font-size: 9px; font-weight: 700; padding: 2px 7px; border-radius: 10px;
+      display: flex; align-items: center; gap: 3px; white-space: nowrap;
+    }
+    .leg-dot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  </style>
+</head>
+<body>
+
+<!-- Header -->
+<div id="header">
+  <h1>Progress <span>Annotator</span></h1>
+  <div id="trace-meta">Select a trace from the sidebar</div>
+  <div id="auto-save-status"></div>
+  <div id="legend">
+    <div class="leg" style="background:#F5F3FF;color:#6D28D9;border:1px solid #DDD6FE"><span class="leg-dot" style="background:#7C3AED"></span>AGENT</div>
+    <div class="leg" style="background:#EFF6FF;color:#1D4ED8;border:1px solid #BFDBFE"><span class="leg-dot" style="background:#2563EB"></span>LLM</div>
+    <div class="leg" style="background:#FFFBEB;color:#92400E;border:1px solid #FDE68A"><span class="leg-dot" style="background:#D97706"></span>TOOL</div>
+    <div class="leg" style="background:#ECFDF5;color:#065F46;border:1px solid #A7F3D0"><span class="leg-dot" style="background:#059669"></span>CHAIN</div>
+  </div>
+  <button class="hdr-btn" id="prev-btn" disabled onclick="navTrace(-1)">Prev</button>
+  <button class="hdr-btn" id="next-btn" disabled onclick="navTrace(1)">Next</button>
+  <button class="hdr-btn" id="save-btn" disabled onclick="saveAnnotation()">Save (Ctrl+S)</button>
+</div>
+
+<!-- Column headers -->
+<div id="col-headers">
+  <div class="col-hdr col-hdr-sidebar">Traces</div>
+  <div class="col-hdr col-hdr-spans">Trace Spans</div>
+  <div class="col-hdr col-hdr-left">Trace Summary</div>
+  <div class="col-hdr col-hdr-right">Annotation</div>
+</div>
+
+<!-- Main -->
+<div id="main">
+  <!-- Sidebar -->
+  <div id="sidebar">
+    <input type="text" id="search-box" placeholder="Search trace ID...">
+    <div id="progress-counter">
+      <span id="progress-text">— / — done</span>
+      <div id="progress-bar"><div id="progress-fill" style="width:0%"></div></div>
+    </div>
+    <div id="file-list"></div>
+  </div>
+
+  <!-- Spans: trace span tree (matches trace_viewer left panel) -->
+  <div id="spans-panel">
+    <div class="panel-empty" id="spans-empty">
+      <div class="panel-empty-icon">&#128203;</div>
+      <div>Select a trace to see spans</div>
+    </div>
+    <div id="spans-content" style="display:none"></div>
+  </div>
+
+  <!-- Left: summary (matches trace_viewer right panel) -->
+  <div id="left-panel">
+    <div class="panel-empty" id="left-empty">
+      <div class="panel-empty-icon">&#128214;</div>
+      <div>Select a trace to see its summary</div>
+    </div>
+    <div id="left-content" style="display:none"></div>
+  </div>
+
+  <!-- Right: annotation -->
+  <div id="right-panel">
+    <div class="panel-empty" id="right-empty">
+      <div class="panel-empty-icon">&#9997;</div>
+      <div>Annotation panel</div>
+    </div>
+    <div id="right-content" style="display:none"></div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+// ================================================================
+// Type config (from trace_viewer.html)
+// ================================================================
+const TYPE_CFG = {
+  AGENT: { dot:'#7C3AED', color:'#6D28D9', bg:'#F5F3FF', border:'#7C3AED' },
+  LLM:   { dot:'#2563EB', color:'#1D4ED8', bg:'#EFF6FF', border:'#2563EB' },
+  TOOL:  { dot:'#D97706', color:'#92400E', bg:'#FFFBEB', border:'#D97706' },
+  CHAIN: { dot:'#059669', color:'#065F46', bg:'#ECFDF5', border:'#059669' },
+};
+const DEF_CFG = { dot:'#94A3B8', color:'#475569', bg:'#F9FAFB', border:'#CBD5E1' };
+
+const _nameToKind = {};
+function cfgByName(nm) { return TYPE_CFG[_nameToKind[nm]] || DEF_CFG; }
+function cfgOf(span) { return TYPE_CFG[(span.span_attributes||{})['openinference.span.kind']] || DEF_CFG; }
+
+function prettyVal(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'object') return JSON.stringify(raw, null, 2);
+  try { return JSON.stringify(JSON.parse(raw), null, 2); } catch { return raw; }
+}
+
+function getIn(span) {
+  const a = span.span_attributes || {};
+  if (a['input.value']) return a['input.value'];
+  for (const log of (span.logs||[])) {
+    const b = log.body||{};
+    if (b['input.value']) return b['input.value'];
+    if (b['function.arguments']) return prettyVal(b['function.arguments']);
+  }
+  return null;
+}
+
+function getOut(span) {
+  const a = span.span_attributes || {};
+  if (a['output.value']) return a['output.value'];
+  for (const log of (span.logs||[])) {
+    const b = log.body||{};
+    if (b['output.value']) return b['output.value'];
+    if (b['function.output'] !== undefined) return prettyVal(b['function.output']);
+  }
+  return null;
+}
+
+function dfs(spans) {
+  const out = [];
+  function walk(s) { out.push(s); (s.child_spans||[]).forEach(walk); }
+  spans.forEach(walk);
+  return out;
+}
+
+function fmtDur(iso) {
+  if (!iso) return '';
+  let m = iso.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?/);
+  if (!m) {
+    // Try "1m27.789s" format
+    m = iso.match(/(?:(\d+)m\s*)?(?:([\d.]+)s)?/);
+    if (!m) return iso;
+    const s = (+(m[1]||0))*60 + +(m[2]||0);
+    if (s < 1) return Math.round(s*1000)+'ms';
+    if (s < 60) return s.toFixed(2)+'s';
+    return Math.floor(s/60)+'m '+(s%60).toFixed(1)+'s';
+  }
+  const s = (+(m[1]||0))*3600 + (+(m[2]||0))*60 + +(m[3]||0);
+  if (s < 1) return Math.round(s*1000)+'ms';
+  if (s < 60) return s.toFixed(2)+'s';
+  return Math.floor(s/60)+'m '+(s%60).toFixed(1)+'s';
+}
+
+// ================================================================
+// State
+// ================================================================
+let _traceList = [];
+let _currentIdx = -1;
+let _currentData = null;
+let _dirty = false;
+
+// cross-highlight state
+let _spanEls = {};     // spanId → DOM el (spans panel)
+let _summaryEls = {};  // spanId → DOM el (summary panel)
+
+// annotation state
+let _plan = [];
+let _rootCauseStep = null;    // step_number from finalized plan
+let _rootCauseSpanId = null;
+let _rootCauseReasoning = '';
+let _stepAnnotations = {};  // spanId -> {status, note}
+let _notes = '';
+
+// auto-save
+let _autoSaveTimer = null;
+
+// ================================================================
+// Init
+// ================================================================
+document.addEventListener('DOMContentLoaded', () => { loadTraceList(); loadStats(); });
+document.addEventListener('keydown', e => {
+  // Ctrl/Cmd+S: save
+  if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+    e.preventDefault();
+    saveAnnotation();
+    return;
+  }
+  // Don't fire shortcuts when typing in a text field
+  const tag = document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+
+  if (e.key === 'j' || e.key === 'ArrowRight') { e.preventDefault(); navTrace(1); }
+  else if (e.key === 'k' || e.key === 'ArrowLeft') { e.preventDefault(); navTrace(-1); }
+  else if (e.key === 's') { e.preventDefault(); saveAnnotation('save'); }
+  else if (e.key === 'e') { e.preventDefault(); saveAnnotation('exclude'); }
+  else if (e.key >= '1' && e.key <= '9') {
+    const n = parseInt(e.key);
+    if (_plan.length > 0 && n <= _plan.length) { markRCStep(n); }
+  }
+});
+
+async function loadTraceList() {
+  const resp = await fetch('/api/traces');
+  _traceList = await resp.json();
+  renderFileList();
+}
+
+async function loadStats() {
+  try {
+    const resp = await fetch('/api/traces/stats');
+    const s = await resp.json();
+    const done = s.saved + s.excluded;
+    document.getElementById('progress-text').textContent = `${done} / ${s.total} done`;
+    const pct = s.total > 0 ? Math.round(done / s.total * 100) : 0;
+    document.getElementById('progress-fill').style.width = pct + '%';
+  } catch {}
+}
+
+function renderFileList() {
+  const q = document.getElementById('search-box').value.toLowerCase();
+  const list = document.getElementById('file-list');
+  list.innerHTML = '';
+  _traceList.forEach((t, i) => {
+    if (q && !t.trace_id.includes(q)) return;
+    const el = document.createElement('div');
+    el.className = 'file-item' + (i === _currentIdx ? ' active' : '');
+
+    const idRow = document.createElement('div');
+    idRow.style.cssText = 'display:flex;align-items:center;gap:6px;width:100%';
+    idRow.innerHTML = `<span style="flex:1;overflow:hidden;text-overflow:ellipsis;font-family:monospace">${t.trace_id.slice(0,16)}</span>`;
+
+    if (t.saved) {
+      const b = document.createElement('span');
+      b.className = 'badge badge-saved'; b.textContent = 'done';
+      idRow.appendChild(b);
+    }
+    if (t.excluded) {
+      const b = document.createElement('span');
+      b.className = 'badge badge-excluded'; b.textContent = 'excl';
+      idRow.appendChild(b);
+    }
+    if (t.has_gt) {
+      const b = document.createElement('span');
+      b.className = 'badge badge-gt'; b.textContent = 'GT';
+      idRow.appendChild(b);
+    }
+    el.appendChild(idRow);
+
+    if (t.summary_preview) {
+      const preview = document.createElement('div');
+      preview.className = 'task-preview';
+      preview.textContent = t.summary_preview;
+      el.appendChild(preview);
+    }
+
+    el.addEventListener('click', () => loadTrace(i));
+    list.appendChild(el);
+  });
+}
+
+document.getElementById('search-box').addEventListener('input', renderFileList);
+
+// ================================================================
+// Load trace
+// ================================================================
+async function loadTrace(idx) {
+  if (_dirty && !confirm('Unsaved changes. Discard?')) return;
+  _currentIdx = idx;
+  const tid = _traceList[idx].trace_id;
+  document.getElementById('trace-meta').textContent = `Loading ${tid}...`;
+
+  const resp = await fetch(`/api/trace/${tid}`);
+  _currentData = await resp.json();
+
+  document.getElementById('trace-meta').textContent = `Trace ${tid}`;
+  document.getElementById('save-btn').disabled = false;
+  document.getElementById('prev-btn').disabled = idx <= 0;
+  document.getElementById('next-btn').disabled = idx >= _traceList.length - 1;
+
+  // Initialize annotation state from saved or defaults
+  if (_currentData.saved_annotation) {
+    const sa = _currentData.saved_annotation;
+    _plan = sa.finalized_plan || _currentData.merged_plan || [];
+    _rootCauseStep = sa.root_cause_step || null;
+    _rootCauseSpanId = sa.root_cause_span_id || null;
+    _rootCauseReasoning = sa.root_cause_reasoning || '';
+    _stepAnnotations = {};
+    (sa.step_annotations || []).forEach(a => { _stepAnnotations[a.span_id] = a; });
+    _notes = sa.notes || '';
+  } else {
+    _plan = JSON.parse(JSON.stringify(_currentData.merged_plan || []));
+    _rootCauseStep = null;
+    _rootCauseSpanId = null;
+    _rootCauseReasoning = '';
+    _stepAnnotations = {};
+    _notes = '';
+  }
+  _dirty = false;
+  clearTimeout(_autoSaveTimer);
+
+  renderSpans();
+  renderLeft();
+  renderRight();
+  renderFileList();
+}
+
+function navTrace(delta) {
+  const newIdx = _currentIdx + delta;
+  if (newIdx >= 0 && newIdx < _traceList.length) loadTrace(newIdx);
+}
+
+// ================================================================
+// Summary parser (from trace_viewer.html)
+// ================================================================
+function findSepColon(str) {
+  let depth = 0;
+  for (let j = 0; j < str.length; j++) {
+    const ch = str[j];
+    if (ch === '[') depth++;
+    else if (ch === ']') depth = Math.max(0, depth - 1);
+    else if (ch === ':' && depth === 0) return j;
+  }
+  return -1;
+}
+
+function parseSummary(text) {
+  const entries = [];
+  const lines = text.split('\n');
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    const m = line.match(/^(\s*)[*\-]\s+\[([^\]]+)\]\s+\*\*([^*]+)\*\*(.*)/);
+    if (!m) { i++; continue; }
+    const bulletIndent = m[1].length;
+    const depth = Math.floor(bulletIndent / 4);
+    const rawId = m[2].trim();
+    const arrowIdx = rawId.indexOf(' -> ');
+    const spanId = arrowIdx >= 0 ? rawId.slice(0, arrowIdx).trim() : rawId;
+    const spanName = m[3].trim();
+    const rest = m[4];
+    const durMatch = rest.match(/PT[\d.]+[HMShms][\d.HMShms]*/);
+    let duration = durMatch ? durMatch[0] : '';
+    if (!duration) {
+      const altDur = rest.match(/\(([^)]*\d+m?\s*[\d.]*s?[^)]*)\)/);
+      if (altDur) duration = altDur[1];
+    }
+    const sepIdx = findSepColon(rest);
+    let descText = sepIdx >= 0 ? rest.slice(sepIdx + 1).trim() : '';
+    i++;
+    if (!descText) {
+      const parts = [];
+      while (i < lines.length) {
+        const nl = lines[i];
+        if (!nl.trim()) { i++; break; }
+        if (/^\s*[*\-]\s+\[/.test(nl)) break;
+        const ni = nl.match(/^(\s*)/)[1].length;
+        if (ni <= bulletIndent) break;
+        parts.push(nl.trim());
+        i++;
+      }
+      descText = parts.join(' ');
+    }
+    // Build kind map
+    if (spanName.includes('Agent')) _nameToKind[spanName] = 'AGENT';
+    else if (spanName.includes('LLM') || spanName.includes('LiteLLM')) _nameToKind[spanName] = 'LLM';
+    else if (spanName.includes('Tool')) _nameToKind[spanName] = 'TOOL';
+    else if (spanName.includes('Step') || spanName === 'CHAIN') _nameToKind[spanName] = 'CHAIN';
+    entries.push({ depth, spanId, spanName, duration, text: descText });
+  }
+  return entries;
+}
+
+// ================================================================
+// Render spans panel (trace_viewer left panel)
+// ================================================================
+function renderSpans() {
+  if (!_currentData || !_currentData.spans) {
+    document.getElementById('spans-empty').style.display = '';
+    document.getElementById('spans-content').style.display = 'none';
+    return;
+  }
+
+  document.getElementById('spans-empty').style.display = 'none';
+  const sc = document.getElementById('spans-content');
+  sc.style.display = 'block';
+  sc.innerHTML = '';
+  _spanEls = {};
+
+  // Build kind map from spans
+  const spans = _currentData.spans;
+  (function buildK(s) {
+    const k = (s.span_attributes||{})['openinference.span.kind'];
+    if (k) _nameToKind[s.span_name] = k;
+    (s.child_spans||[]).forEach(buildK);
+  }); spans.forEach(function bk(s) {
+    const k = (s.span_attributes||{})['openinference.span.kind'];
+    if (k) _nameToKind[s.span_name] = k;
+    (s.child_spans||[]).forEach(bk);
+  });
+
+  const ordered = dfs(spans);
+  ordered.forEach(span => {
+    const el = buildBlock(span);
+    _spanEls[span.span_id] = el;
+    sc.appendChild(el);
+  });
+}
+
+function buildBlock(span) {
+  const c = cfgOf(span);
+  const isRC = _rootCauseSpanId === span.span_id;
+  const iv = getIn(span);
+  const ov = getOut(span);
+
+  const el = document.createElement('div');
+  el.className = 'span-block' + (isRC ? ' root-cause-marked' : '');
+  el.style.setProperty('--blk-bd', isRC ? '#EF4444' : c.border);
+  el.style.setProperty('--blk-bg', isRC ? '#FFF5F5' : c.bg);
+
+  // Header
+  const hdr = document.createElement('div');
+  hdr.className = 'blk-hdr';
+
+  const badge = document.createElement('span');
+  badge.className = 'blk-badge';
+  const label = (c === DEF_CFG) ? 'SPAN' : Object.keys(TYPE_CFG).find(k => TYPE_CFG[k] === c) || 'SPAN';
+  badge.style.cssText = `background:${c.bg};color:${c.color};border:1px solid ${c.border}`;
+  badge.textContent = label;
+
+  const nm = document.createElement('span');
+  nm.className = 'blk-name';
+  nm.title = span.span_name;
+  nm.textContent = span.span_name;
+
+  const d = document.createElement('span');
+  d.className = 'blk-dur';
+  d.textContent = fmtDur(span.duration);
+
+  hdr.append(badge, nm, d);
+
+  const st = span.status_code;
+  if (st && st !== 'Unset') {
+    const sc = document.createElement('span');
+    sc.className = 'blk-status ' + (st === 'Ok' ? 'st-ok' : 'st-error');
+    sc.textContent = st;
+    hdr.appendChild(sc);
+  }
+
+  // Root cause button
+  const rcBtn = document.createElement('button');
+  rcBtn.className = 'blk-rc-btn' + (isRC ? ' selected' : '');
+  rcBtn.textContent = isRC ? 'Root Cause' : 'Mark RC';
+  rcBtn.title = 'Mark this span as root cause';
+  rcBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (_rootCauseSpanId === span.span_id) {
+      _rootCauseSpanId = null;
+    } else {
+      _rootCauseSpanId = span.span_id;
+    }
+    _dirty = true;
+    triggerAutoSave();
+    renderSpans();
+    renderLeft();
+    renderRootCauseSection();
+  });
+  hdr.appendChild(rcBtn);
+
+  el.appendChild(hdr);
+
+  // IO
+  const io = document.createElement('div');
+  io.className = 'blk-io';
+  io.appendChild(mkIORow('INPUT', iv, 'lbl-in'));
+  io.appendChild(mkIORow('OUTPUT', ov, 'lbl-out'));
+  el.appendChild(io);
+
+  // Click: cross-highlight with summary panel
+  el.addEventListener('click', () => {
+    // Highlight this span block
+    Object.values(_spanEls).forEach(e => e.classList.remove('active'));
+    el.classList.add('active');
+    // Cross-highlight corresponding summary entry
+    activateSummaryEl(span.span_id);
+  });
+
+  return el;
+}
+
+function activateSpanEl(spanId) {
+  Object.values(_spanEls).forEach(e => e.classList.remove('active'));
+  const el = _spanEls[spanId];
+  if (el) {
+    el.classList.add('active');
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function activateSummaryEl(spanId) {
+  Object.values(_summaryEls).forEach(e => e.classList.remove('active'));
+  const el = _summaryEls[spanId];
+  if (el) {
+    el.classList.add('active');
+    el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function mkIORow(label, raw, lblCls) {
+  const row = document.createElement('div');
+  row.className = 'io-row';
+
+  const lbl = document.createElement('div');
+  row.appendChild(lbl);
+
+  if (!raw) {
+    lbl.className = 'io-lbl lbl-nil';
+    lbl.textContent = `No ${label.toLowerCase()}`;
+    return row;
+  }
+
+  lbl.className = `io-lbl ${lblCls}`;
+  lbl.textContent = label;
+
+  const pretty = prettyVal(raw);
+  const long = pretty.length > 300;
+
+  const val = document.createElement('div');
+  val.className = 'io-val';
+  val.textContent = pretty;
+  row.appendChild(val);
+
+  if (long) {
+    const btn = document.createElement('button');
+    btn.className = 'io-more';
+    btn.textContent = 'Show more \u2193';
+    let exp = false;
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      exp = !exp;
+      val.classList.toggle('expanded', exp);
+      btn.textContent = exp ? 'Show less \u2191' : 'Show more \u2193';
+    });
+    row.appendChild(btn);
+  }
+
+  return row;
+}
+
+// ================================================================
+// Render left panel (trace summary)
+// ================================================================
+function renderLeft() {
+  if (!_currentData) return;
+  document.getElementById('left-empty').style.display = 'none';
+  const lc = document.getElementById('left-content');
+  lc.style.display = 'block';
+  lc.innerHTML = '';
+
+  const entries = parseSummary(_currentData.summary);
+
+  // Build children map
+  const childrenOf = entries.map(() => []);
+  for (let i = 0; i < entries.length; i++) {
+    for (let j = i - 1; j >= 0; j--) {
+      if (entries[j].depth < entries[i].depth) {
+        childrenOf[j].push(i);
+        break;
+      }
+    }
+  }
+
+  _summaryEls = {};
+  const wraps = entries.map((entry, i) => buildEntry(entry, i));
+  const collapsed = new Array(entries.length).fill(false);
+
+  // Register summary elements and add cross-highlight click
+  wraps.forEach((wrap, i) => {
+    const entry = entries[i];
+    if (/^[0-9a-f]{16}$/.test(entry.spanId)) {
+      _summaryEls[entry.spanId] = wrap.seEl;
+    }
+    wrap.seEl.addEventListener('click', () => {
+      // Highlight this summary entry
+      Object.values(_summaryEls).forEach(e => e.classList.remove('active'));
+      wrap.seEl.classList.add('active');
+      // Cross-highlight corresponding span block
+      activateSpanEl(entry.spanId);
+    });
+  });
+
+  // Collapse toggles
+  for (let i = 0; i < entries.length; i++) {
+    if (childrenOf[i].length > 0) {
+      const btn = document.createElement('button');
+      btn.className = 'se-collapse-btn';
+      btn.innerHTML = '&#9660;';
+      btn.title = 'Collapse children';
+      btn.addEventListener('click', ((idx) => (e) => {
+        e.stopPropagation();
+        collapsed[idx] = !collapsed[idx];
+        const b = wraps[idx].seEl.querySelector('.se-collapse-btn');
+        b.innerHTML = collapsed[idx] ? '&#9654;' : '&#9660;';
+        (function visit(ii, hidden) {
+          for (const ci of childrenOf[ii]) {
+            wraps[ci].style.display = (hidden || collapsed[ii]) ? 'none' : '';
+            visit(ci, hidden || collapsed[ii]);
+          }
+        })(idx, false);
+      })(i));
+      wraps[i].seEl.querySelector('.se-hdr').prepend(btn);
+    }
+  }
+
+  wraps.forEach(w => lc.appendChild(w));
+}
+
+function buildEntry(entry) {
+  const c = cfgByName(entry.spanName);
+  const isRC = _rootCauseSpanId === entry.spanId;
+
+  const el = document.createElement('div');
+  el.className = 'se' + (isRC ? ' root-cause-marked' : '');
+  el.style.setProperty('--se-bd', isRC ? '#EF4444' : c.border);
+  el.style.setProperty('--se-bg', isRC ? '#FFF5F5' : c.bg);
+  el.style.marginLeft = (14 + entry.depth * 20) + 'px';
+  el.style.marginRight = '14px';
+
+  const hdr = document.createElement('div');
+  hdr.className = 'se-hdr';
+
+  const dot = document.createElement('span');
+  dot.className = 'se-dot';
+  dot.style.background = isRC ? '#EF4444' : c.dot;
+
+  const nm = document.createElement('span');
+  nm.className = 'se-name';
+  nm.title = entry.spanName;
+  nm.textContent = entry.spanName;
+
+  const sid = document.createElement('span');
+  sid.className = 'se-id';
+  sid.textContent = entry.spanId;
+
+  const d = document.createElement('span');
+  d.className = 'se-dur';
+  d.textContent = fmtDur(entry.duration);
+
+  // Root cause button
+  const rcBtn = document.createElement('button');
+  rcBtn.className = 'se-rc-btn' + (isRC ? ' selected' : '');
+  rcBtn.textContent = isRC ? 'Root Cause' : 'Mark RC';
+  rcBtn.title = 'Mark this span as root cause';
+  rcBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (_rootCauseSpanId === entry.spanId) {
+      _rootCauseSpanId = null;
+    } else {
+      _rootCauseSpanId = entry.spanId;
+    }
+    _dirty = true;
+    triggerAutoSave();
+    renderSpans();
+    renderLeft();
+    renderRootCauseSection();
+  });
+
+  hdr.append(dot, nm, sid, d, rcBtn);
+  el.appendChild(hdr);
+
+  if (entry.text) {
+    const txt = document.createElement('div');
+    txt.className = 'se-text';
+    txt.textContent = entry.text;
+    el.appendChild(txt);
+  }
+
+  // Wrap with guide lines
+  const wrap = document.createElement('div');
+  wrap.style.position = 'relative';
+  wrap.style.marginBottom = '5px';
+  for (let g = 0; g < entry.depth; g++) {
+    const ln = document.createElement('div');
+    ln.style.cssText = `position:absolute;top:0;bottom:-5px;left:${14 + g * 20 + 1}px;width:1px;background:#D1D5DB;pointer-events:none;`;
+    wrap.appendChild(ln);
+  }
+  wrap.appendChild(el);
+  wrap.seEl = el;
+  return wrap;
+}
+
+// ================================================================
+// Render right panel (annotation)
+// ================================================================
+function renderRight() {
+  if (!_currentData) return;
+  document.getElementById('right-empty').style.display = 'none';
+  const rc = document.getElementById('right-content');
+  rc.style.display = 'block';
+  rc.innerHTML = '';
+
+  // 1. Task description
+  const taskSec = mkSection('Task Description');
+  const taskDiv = document.createElement('div');
+  taskDiv.className = 'task-desc';
+  taskDiv.textContent = _currentData.task_description;
+  taskSec.appendChild(taskDiv);
+  rc.appendChild(taskSec);
+
+  // 2. Extracted plans (read-only)
+  if (_currentData.extracted_plans && _currentData.extracted_plans.length > 0) {
+    const epSec = mkSection('Extracted Plans', _currentData.extracted_plans.length);
+    _currentData.extracted_plans.forEach((p, i) => {
+      const pDiv = document.createElement('div');
+      pDiv.style.cssText = 'font-size:11px;line-height:1.6;padding:6px 8px;margin-bottom:6px;background:#F8FAFC;border:1px solid #E2E8F0;border-radius:6px;';
+      const label = document.createElement('div');
+      label.style.cssText = 'font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;margin-bottom:3px;';
+      label.style.color = p.plan_type === 'revised' ? '#D97706' : '#2563EB';
+      label.textContent = `${p.plan_type} plan (span: ${p.span_id.slice(0,8)}...)`;
+      pDiv.appendChild(label);
+      const text = document.createElement('div');
+      text.style.color = '#475569';
+      text.textContent = p.raw_text.length > 200 ? p.raw_text.slice(0,200) + '...' : p.raw_text;
+      pDiv.appendChild(text);
+      epSec.appendChild(pDiv);
+    });
+    rc.appendChild(epSec);
+  }
+
+  // 3. Finalized plan (editable)
+  const planSec = mkSection('Finalized Plan (Editable)', _plan.length);
+  planSec.id = 'plan-steps-section';
+  renderPlanSteps(planSec);
+  rc.appendChild(planSec);
+
+  // 4. Root cause annotation
+  renderRootCauseSection(rc);
+
+  // 5. GT annotation (read-only)
+  if (_currentData.gt_annotation) {
+    renderGTSection(rc);
+  }
+
+  // 6. Notes
+  const notesSec = mkSection('Notes');
+  const notesArea = document.createElement('textarea');
+  notesArea.className = 'notes-textarea';
+  notesArea.placeholder = 'Add notes about this trace...';
+  notesArea.value = _notes;
+  notesArea.addEventListener('input', () => { _notes = notesArea.value; _dirty = true; triggerAutoSave(); });
+  notesSec.appendChild(notesArea);
+  rc.appendChild(notesSec);
+
+  // 7. Action buttons (Save / Exclude)
+  const actionDiv = document.createElement('div');
+  actionDiv.className = 'action-btns';
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'action-btn action-btn-save';
+  saveBtn.textContent = 'Save';
+  saveBtn.addEventListener('click', () => saveAnnotation('save'));
+  actionDiv.appendChild(saveBtn);
+
+  const excludeBtn = document.createElement('button');
+  excludeBtn.className = 'action-btn action-btn-exclude';
+  excludeBtn.textContent = 'Exclude';
+  excludeBtn.addEventListener('click', () => saveAnnotation('exclude'));
+  actionDiv.appendChild(excludeBtn);
+
+  rc.appendChild(actionDiv);
+}
+
+function mkSection(title, count) {
+  const sec = document.createElement('div');
+  sec.className = 'section';
+  const h = document.createElement('div');
+  h.className = 'section-title';
+  h.textContent = title;
+  if (count !== undefined) {
+    const c = document.createElement('span');
+    c.className = 'count';
+    c.textContent = count;
+    h.appendChild(c);
+  }
+  sec.appendChild(h);
+  return sec;
+}
+
+// ================================================================
+// Plan editor
+// ================================================================
+function renderPlanSteps(container) {
+  // Remove old steps (keep title)
+  while (container.children.length > 1) container.removeChild(container.lastChild);
+
+  _plan.forEach((step, i) => {
+    const isRCStep = _rootCauseStep === step.step_number;
+    const row = document.createElement('div');
+    row.className = 'plan-step' + (isRCStep ? ' rc-step' : '');
+
+    const num = document.createElement('div');
+    num.className = 'plan-step-num';
+    num.textContent = step.step_number;
+
+    const desc = document.createElement('textarea');
+    desc.className = 'plan-step-desc';
+    desc.value = step.description;
+    desc.rows = 1;
+    desc.addEventListener('input', () => {
+      _plan[i].description = desc.value;
+      _dirty = true;
+      triggerAutoSave();
+      desc.style.height = 'auto';
+      desc.style.height = desc.scrollHeight + 'px';
+    });
+    // Auto-resize
+    setTimeout(() => { desc.style.height = desc.scrollHeight + 'px'; }, 0);
+
+    const deps = document.createElement('div');
+    deps.className = 'plan-step-deps';
+    deps.textContent = step.depends_on && step.depends_on.length > 0
+      ? 'deps: ' + step.depends_on.join(',')
+      : '';
+
+    const rcStepBtn = document.createElement('button');
+    rcStepBtn.className = 'plan-step-rc' + (isRCStep ? ' selected' : '');
+    rcStepBtn.title = isRCStep ? 'Deselect root cause step' : 'Mark as root cause step (or press ' + step.step_number + ')';
+    rcStepBtn.textContent = isRCStep ? 'Root Cause ✓' : 'RC';
+    rcStepBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      markRCStep(step.step_number);
+    });
+
+    const del = document.createElement('button');
+    del.className = 'plan-step-del';
+    del.innerHTML = '&times;';
+    del.title = 'Remove step';
+    del.addEventListener('click', () => {
+      _plan.splice(i, 1);
+      _plan.forEach((s, j) => { s.step_number = j + 1; });
+      if (_rootCauseStep === step.step_number) _rootCauseStep = null;
+      _dirty = true;
+      triggerAutoSave();
+      renderPlanSteps(container);
+      renderRootCauseSection();
+      updatePlanCount(container);
+    });
+
+    row.append(num, desc, deps, rcStepBtn, del);
+    container.appendChild(row);
+  });
+
+  const addBtn = document.createElement('button');
+  addBtn.className = 'add-step-btn';
+  addBtn.textContent = '+ Add Step';
+  addBtn.addEventListener('click', () => {
+    _plan.push({
+      step_number: _plan.length + 1,
+      description: '',
+      depends_on: [],
+    });
+    _dirty = true;
+    triggerAutoSave();
+    renderPlanSteps(container);
+    updatePlanCount(container);
+  });
+  container.appendChild(addBtn);
+}
+
+function updatePlanCount(sec) {
+  const c = sec.querySelector('.count');
+  if (c) c.textContent = _plan.length;
+}
+
+// ================================================================
+// Root cause section
+// ================================================================
+function renderRootCauseSection(container) {
+  // If called with container, create new; otherwise update existing
+  if (!container) {
+    const existing = document.getElementById('rc-section');
+    if (existing) {
+      const parent = existing.parentNode;
+      const next = existing.nextSibling;
+      parent.removeChild(existing);
+      const sec = _buildRCSection();
+      parent.insertBefore(sec, next);
+    }
+    return;
+  }
+
+  container.appendChild(_buildRCSection());
+}
+
+function _buildRCSection() {
+  const sec = document.createElement('div');
+  sec.className = 'section rc-section';
+  sec.id = 'rc-section';
+
+  const h = document.createElement('div');
+  h.className = 'section-title';
+  h.textContent = 'Root Cause Annotation';
+  sec.appendChild(h);
+
+  // Root cause step (primary IAA field)
+  const stepLabel = document.createElement('div');
+  stepLabel.className = 'rc-label';
+  stepLabel.textContent = 'Root Cause Step';
+  sec.appendChild(stepLabel);
+
+  const stepVal = document.createElement('div');
+  stepVal.className = 'rc-value' + (_rootCauseStep ? '' : ' empty');
+  if (_rootCauseStep) {
+    const matchStep = _plan.find(s => s.step_number === _rootCauseStep);
+    stepVal.textContent = `Step ${_rootCauseStep}` + (matchStep ? `: ${matchStep.description}` : '');
+  } else {
+    stepVal.textContent = 'Click "RC" on a plan step above, or press 1–9';
+  }
+  sec.appendChild(stepVal);
+
+  // Span ID
+  const rcLabel = document.createElement('div');
+  rcLabel.className = 'rc-label';
+  rcLabel.style.marginTop = '8px';
+  rcLabel.textContent = 'Root Cause Span (optional)';
+  sec.appendChild(rcLabel);
+
+  const rcVal = document.createElement('div');
+  rcVal.className = 'rc-value' + (_rootCauseSpanId ? '' : ' empty');
+  rcVal.textContent = _rootCauseSpanId || 'Click "Mark RC" on a span in the spans/summary panel';
+  sec.appendChild(rcVal);
+
+  // Reasoning
+  const reasonLabel = document.createElement('div');
+  reasonLabel.className = 'rc-label';
+  reasonLabel.textContent = 'Reasoning';
+  sec.appendChild(reasonLabel);
+
+  const reasonArea = document.createElement('textarea');
+  reasonArea.className = 'rc-textarea';
+  reasonArea.placeholder = 'Why is this the root cause?';
+  reasonArea.value = _rootCauseReasoning;
+  reasonArea.addEventListener('input', () => {
+    _rootCauseReasoning = reasonArea.value;
+    _dirty = true;
+    triggerAutoSave();
+  });
+  sec.appendChild(reasonArea);
+
+  return sec;
+}
+
+// ================================================================
+// Ground truth display
+// ================================================================
+function renderGTSection(container) {
+  const gt = _currentData.gt_annotation;
+  const sec = mkSection('Ground Truth (Read-Only)');
+  sec.style.background = '#FFFBEB';
+  sec.style.borderColor = '#FDE68A';
+
+  // Outcome
+  const outcome = document.createElement('div');
+  outcome.style.cssText = 'font-size:12px;font-weight:700;margin-bottom:8px;';
+  outcome.style.color = gt.trace_outcome === 'Failure' ? '#DC2626' : '#059669';
+  outcome.textContent = `Outcome: ${gt.trace_outcome}`;
+  sec.appendChild(outcome);
+
+  // Causal chains
+  (gt.causal_chains || []).forEach((chain, ci) => {
+    const cd = document.createElement('div');
+    cd.className = 'gt-chain';
+    const ct = document.createElement('div');
+    ct.className = 'gt-chain-title';
+    ct.textContent = `Causal Chain ${ci + 1}`;
+    cd.appendChild(ct);
+
+    // Root cause
+    if (chain.root_cause) {
+      cd.appendChild(mkGTSpan(chain.root_cause, 'root'));
+    }
+    // Symptoms
+    (chain.symptoms || []).forEach(s => {
+      cd.appendChild(mkGTSpan(s, 'symptom'));
+    });
+
+    sec.appendChild(cd);
+  });
+
+  container.appendChild(sec);
+}
+
+function mkGTSpan(span, role) {
+  const el = document.createElement('div');
+  el.className = 'gt-span';
+
+  const roleBadge = document.createElement('span');
+  roleBadge.className = 'gt-span-role ' + (role === 'root' ? 'gt-role-root' : 'gt-role-symptom');
+  roleBadge.textContent = role === 'root' ? 'ROOT' : 'SYMPTOM';
+
+  const sid = document.createElement('span');
+  sid.className = 'gt-span-id';
+  sid.textContent = span.span_id || '?';
+
+  const cat = document.createElement('span');
+  cat.className = 'gt-span-cat';
+  cat.textContent = ' ' + (span.category || '');
+
+  el.append(roleBadge, sid, cat);
+
+  if (span.description) {
+    const desc = document.createElement('div');
+    desc.className = 'gt-span-desc';
+    desc.textContent = span.description;
+    el.appendChild(desc);
+  }
+
+  return el;
+}
+
+// ================================================================
+// Save
+// ================================================================
+function markRCStep(stepNum) {
+  _rootCauseStep = (_rootCauseStep === stepNum) ? null : stepNum;
+  _dirty = true;
+  triggerAutoSave();
+  // Re-render plan steps and RC section without full right panel re-render
+  const planSec = document.getElementById('plan-steps-section');
+  if (planSec) renderPlanSteps(planSec);
+  renderRootCauseSection();
+}
+
+function triggerAutoSave() {
+  clearTimeout(_autoSaveTimer);
+  const status = document.getElementById('auto-save-status');
+  if (status) { status.textContent = 'Unsaved'; status.style.color = '#F59E0B'; }
+  _autoSaveTimer = setTimeout(async () => {
+    if (_dirty && _currentData) {
+      await saveAnnotation('save', true);
+    }
+  }, 1500);
+}
+
+async function saveAnnotation(action, silent) {
+  if (!_currentData) return;
+  action = action || 'save';
+  const tid = _currentData.trace_id;
+
+  const payload = {
+    finalized_plan: _plan,
+    root_cause_step: _rootCauseStep,
+    root_cause_span_id: _rootCauseSpanId,
+    root_cause_reasoning: _rootCauseReasoning,
+    step_annotations: Object.values(_stepAnnotations),
+    notes: _notes,
+  };
+
+  const url = action === 'exclude' ? `/api/trace/${tid}/exclude` : `/api/trace/${tid}`;
+
+  try {
+    const resp = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const result = await resp.json();
+    if (result.ok) {
+      _dirty = false;
+      const status = document.getElementById('auto-save-status');
+      if (action === 'exclude') {
+        _traceList[_currentIdx].saved = false;
+        _traceList[_currentIdx].excluded = true;
+        if (!silent) showToast('Excluded!', 'ok');
+        if (status) { status.textContent = 'Excluded'; status.style.color = '#DC2626'; }
+      } else {
+        _traceList[_currentIdx].saved = true;
+        _traceList[_currentIdx].excluded = false;
+        if (!silent) showToast('Saved!', 'ok');
+        if (status) { status.textContent = 'Saved ✓'; status.style.color = '#059669'; }
+      }
+      renderFileList();
+      loadStats();
+    } else {
+      showToast('Failed: ' + (result.error || 'unknown'), 'err');
+    }
+  } catch (e) {
+    showToast('Failed: ' + e.message, 'err');
+  }
+}
+
+function showToast(msg, type) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = type === 'ok' ? 'toast-ok' : 'toast-err';
+  t.style.display = 'block';
+  setTimeout(() => { t.style.display = 'none'; }, 2000);
+}
+</script>
+</body>
+</html>

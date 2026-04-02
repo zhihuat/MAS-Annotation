@@ -1,0 +1,46 @@
+{
+  "trace_id": "5dc4cf8d5175f2782f46265456998d39",
+  "finalized_plan": [
+    {
+      "depends_on": [],
+      "description": "Use the search_agent tool to locate and retrieve the official results from the 2011 Bulgarian census regarding the gender split of individuals who completed tertiary education. Ensure that the source is authoritative, such as an official publication or database from the Bulgarian National Statistical Institute",
+      "step_number": 1
+    },
+    {
+      "depends_on": [],
+      "description": "Extract and verify the specific figures for the number of men and women who have completed tertiary education from the obtained data",
+      "step_number": 2
+    },
+    {
+      "depends_on": [],
+      "description": "Compare the two figures to determine which gender has the larger count",
+      "step_number": 3
+    },
+    {
+      "depends_on": [],
+      "description": "Compute the difference between the larger and the smaller number",
+      "step_number": 4
+    },
+    {
+      "depends_on": [],
+      "description": "Convert this absolute difference into thousands (i.e., divide the difference by 1,000) and format the result with appropriate decimals as per the example given",
+      "step_number": 5
+    },
+    {
+      "depends_on": [],
+      "description": "Perform verification steps by cross-checking the computation and data against another reliable source if necessary to ensure the correctness of the answer",
+      "step_number": 6
+    },
+    {
+      "depends_on": [],
+      "description": "Deliver the final answer as the number (in thousands of women) according to the provided instructions",
+      "step_number": 7
+    }
+  ],
+  "root_cause_step": null,
+  "root_cause_span_id": "96d94fd162e946fc",
+  "root_cause_reasoning": "The system failed to invoke the search_agent",
+  "step_annotations": [],
+  "notes": "",
+  "excluded": false
+}
