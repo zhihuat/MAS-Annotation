@@ -82,8 +82,9 @@
     /* ── Three columns ───────────────────────────────────────── */
     #col-headers {
       display: flex;
-      border-bottom: 1px solid #E2E8F0;
-      background: #FAFAFA;
+      gap: 12px;
+      padding: 8px 12px 0 12px;
+      background: #F8FAFC;
       flex-shrink: 0;
     }
     .col-hdr {
@@ -93,15 +94,29 @@
       text-transform: uppercase;
       letter-spacing: 0.1em;
       color: #94A3B8;
-      border-right: 1px solid #E2E8F0;
+      border: 1px solid #E2E8F0;
+      border-radius: 12px;
+      background: #FFFFFF;
     }
-    .col-hdr:last-child { border-right: none; }
     .col-hdr-sidebar { width: 220px; flex-shrink: 0; }
     .col-hdr-spans { flex: 1; }
     .col-hdr-left { flex: 1; }
     .col-hdr-right { flex: 1; }
 
-    #main { flex: 1; display: flex; overflow: hidden; }
+    #main {
+      flex: 1;
+      display: flex;
+      gap: 12px;
+      padding: 10px 12px 12px 12px;
+      overflow: hidden;
+    }
+
+    #sidebar, #spans-panel, #left-panel, #right-panel {
+      border: 1px solid #E2E8F0;
+      border-radius: 12px;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+      overflow: hidden;
+    }
 
     /* ── Sidebar (file list) ─────────────────────────────────── */
     #sidebar {
@@ -109,7 +124,6 @@
       flex-shrink: 0;
       overflow-y: auto;
       background: #F1F5F9;
-      border-right: 1px solid #E2E8F0;
     }
     #sidebar::-webkit-scrollbar { width: 5px; }
     #sidebar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
@@ -201,7 +215,6 @@
       flex: 1;
       overflow-y: auto;
       background: #F8FAFC;
-      border-right: 1px solid #E2E8F0;
     }
     #spans-panel::-webkit-scrollbar { width: 5px; }
     #spans-panel::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 3px; }
@@ -218,17 +231,7 @@
       position: relative;
       transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
     }
-    .span-block::before {
-      content: '';
-      position: absolute;
-      left: 0;
-      right: 0;
-      top: 0;
-      height: 2px;
-      background: linear-gradient(90deg, var(--blk-bd), transparent);
-      opacity: .65;
-      pointer-events: none;
-    }
+    .span-block::before { display: none; }
     .span-block:hover {
       transform: translateY(-1px);
       box-shadow: 0 8px 20px rgba(15,23,42,.09);
@@ -456,7 +459,6 @@
       flex: 1;
       overflow-y: auto;
       background: #FFFFFF;
-      border-right: 1px solid #E2E8F0;
     }
     #left-panel::-webkit-scrollbar { width: 5px; }
     #left-panel::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 3px; }
@@ -1431,11 +1433,12 @@ function mkIOPane(label, raw) {
   wrap.appendChild(val);
   pane.appendChild(wrap);
 
-  // In collapsed mode, wheel should scroll the outer spans panel.
+  // If the IO box cannot scroll itself, route wheel to the outer spans panel.
   val.addEventListener('wheel', (e) => {
-    if (!val.classList.contains('collapsed')) return;
     const spansPanel = document.getElementById('spans-panel');
     if (!spansPanel) return;
+    const selfScrollable = val.scrollHeight > val.clientHeight + 1;
+    if (selfScrollable && !val.classList.contains('collapsed')) return;
     spansPanel.scrollTop += e.deltaY;
     e.preventDefault();
   }, { passive: false });
