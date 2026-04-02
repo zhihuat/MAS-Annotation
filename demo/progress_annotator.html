@@ -80,28 +80,6 @@
     #prev-btn:hover:not(:disabled), #next-btn:hover:not(:disabled) { background: #4F46E5; }
 
     /* ── Three columns ───────────────────────────────────────── */
-    #col-headers {
-      display: flex;
-      gap: 12px;
-      padding: 8px 12px 0 12px;
-      background: #F8FAFC;
-      flex-shrink: 0;
-    }
-    .col-hdr {
-      padding: 7px 16px;
-      font-size: 10px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      color: #94A3B8;
-      border: 1px solid #E2E8F0;
-      border-radius: 12px;
-      background: #FFFFFF;
-    }
-    .col-hdr-sidebar { width: 220px; flex-shrink: 0; }
-    .col-hdr-spans { flex: 1; }
-    .col-hdr-left { flex: 1; }
-    .col-hdr-right { flex: 1; }
 
     #main {
       flex: 1;
@@ -111,22 +89,34 @@
       overflow: hidden;
     }
 
-    #sidebar, #spans-panel, #left-panel, #right-panel {
+    #sidebar, #spans-panel, #detail-panel {
       border: 1px solid #E2E8F0;
       border-radius: 12px;
       box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
       overflow: hidden;
+    }
+    .panel-title {
+      padding: 11px 12px;
+      background: #F8FAFC;
+      flex-shrink: 0;
+      font-size: 13px;
+      font-weight: 700;
+      color: #1E293B;
+      line-height: 1.2;
     }
 
     /* ── Sidebar (file list) ─────────────────────────────────── */
     #sidebar {
       width: 220px;
       flex-shrink: 0;
-      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
       background: #F1F5F9;
     }
-    #sidebar::-webkit-scrollbar { width: 5px; }
-    #sidebar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
+    #file-list { flex: 1; overflow-y: auto; }
+    #file-list::-webkit-scrollbar { width: 5px; }
+    #file-list::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
 
     #search-box {
       width: 100%;
@@ -213,61 +203,50 @@
     /* ── Spans panel (trace_viewer left panel) ─────────────────── */
     #spans-panel {
       flex: 1;
-      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
       background: #F8FAFC;
     }
-    #spans-panel::-webkit-scrollbar { width: 5px; }
-    #spans-panel::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 3px; }
-    #spans-content { padding: 10px 0 24px 0; }
+    #spans-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 10px 0 24px 0;
+    }
+    #spans-content::-webkit-scrollbar { width: 5px; }
+    #spans-content::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 3px; }
+    #spans-empty { flex: 1; height: auto; }
 
     .span-block {
-      border: 1px solid rgba(15,23,42,.08);
+      border: none;
       border-left: 4px solid var(--blk-bd);
-      background: #FFFFFF;
-      margin: 10px 14px;
-      border-radius: 10px;
+      background: var(--blk-bg, #EEF4F0);
+      margin: 8px 14px;
+      border-radius: 6px;
       overflow: hidden;
       cursor: pointer;
       position: relative;
-      transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+      transition: box-shadow .14s ease;
     }
     .span-block::before { display: none; }
-    .span-block:hover {
-      transform: translateY(-1px);
-      box-shadow: 0 8px 20px rgba(15,23,42,.09);
-    }
+    .span-block:hover { box-shadow: 0 1px 4px rgba(15, 23, 42, 0.06); }
     .span-block.active {
-      box-shadow: 0 0 0 2px var(--blk-bd), 0 12px 26px rgba(15,23,42,.16);
+      box-shadow: 0 0 0 1px var(--blk-bd);
       z-index: 1;
       position: relative;
     }
     .span-block.root-cause-marked {
-      border-left-color: #EF4444 !important;
-      box-shadow: 0 0 0 1.5px rgba(239,68,68,.28), 0 12px 26px rgba(239,68,68,.15);
+      background: #FFF5F5;
+      box-shadow: 0 0 0 1px rgba(239,68,68,.35);
     }
-    .span-block.root-cause-marked::after {
-      content: 'RC';
-      position: absolute;
-      top: 8px;
-      right: 8px;
-      font-size: 9px;
-      font-weight: 800;
-      letter-spacing: .08em;
-      color: #991B1B;
-      background: #FEE2E2;
-      border: 1px solid #FCA5A5;
-      border-radius: 999px;
-      padding: 2px 7px;
-      pointer-events: none;
-    }
+    .span-block.root-cause-marked::after { display: none; }
 
     .blk-hdr {
       display: flex;
       flex-direction: column;
-      gap: 7px;
-      padding: 10px 12px 8px 12px;
-      border-bottom: 1px solid #E2E8F0;
-      background: linear-gradient(135deg, var(--blk-bg), #FFFFFF 70%);
+      gap: 5px;
+      padding: 8px 10px 4px 10px;
+      background: transparent;
     }
     .blk-top {
       display: flex;
@@ -275,157 +254,116 @@
       gap: 8px;
       min-width: 0;
     }
-    .blk-badge {
-      font-size: 8px;
-      font-weight: 900;
-      letter-spacing: .07em;
-      padding: 2px 6px;
-      border-radius: 999px;
-      flex-shrink: 0;
-    }
     .blk-name {
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 700;
-      font-family: monospace;
-      color: #1E293B;
+      font-family: inherit;
+      color: #475569;
       flex: 1;
       min-width: 0;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
     }
-    .blk-dur {
+    .blk-inline-meta {
       font-size: 10px;
       color: #64748B;
       flex-shrink: 0;
-      background: rgba(255,255,255,.7);
-      border: 1px solid #E2E8F0;
-      border-radius: 999px;
-      padding: 1px 6px;
-    }
-    .blk-status {
-      font-size: 9px;
-      font-weight: 700;
-      padding: 1px 7px;
-      border-radius: 999px;
-      flex-shrink: 0;
-    }
-    .st-ok { background: #DCFCE7; color: #166534; border: 1px solid #86EFAC; }
-    .st-error { background: #FEE2E2; color: #991B1B; border: 1px solid #FCA5A5; }
-
-    .blk-meta {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 5px;
-    }
-    .blk-chip {
-      font-size: 9px;
-      color: #475569;
-      background: rgba(255,255,255,.78);
-      border: 1px solid #E2E8F0;
-      border-radius: 999px;
-      padding: 2px 7px;
-      max-width: 100%;
+      width: 16ch;
+      min-width: 16ch;
+      max-width: 16ch;
+      font-family: 'SF Mono', Monaco, 'Courier New', monospace;
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      text-align: left;
     }
-    .blk-chip.mono { font-family: monospace; }
-    .blk-chip.token { color: #1D4ED8; background: #EFF6FF; border-color: #BFDBFE; }
-    .blk-chip.model { color: #6D28D9; background: #F5F3FF; border-color: #DDD6FE; }
-    .blk-chip.warn { color: #B45309; background: #FFFBEB; border-color: #FCD34D; }
+    .blk-subline {
+      font-size: 11px;
+      color: #334155;
+      line-height: 1.5;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      white-space: pre-wrap;
+    }
+
+    .blk-copy-btn {
+      font-size: 9px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      border: 1px solid #CBD5E1;
+      background: transparent;
+      color: #64748B;
+      cursor: pointer;
+      flex-shrink: 0;
+    }
+    .blk-copy-btn:hover:not(:disabled) {
+      border-color: #94A3B8;
+      color: #334155;
+    }
+    .blk-copy-btn:disabled {
+      opacity: .45;
+      cursor: default;
+    }
 
     .blk-io { padding: 10px 12px 12px 12px; }
     .io-tabs {
       display: flex;
-      gap: 6px;
-      margin-bottom: 9px;
+      gap: 12px;
+      margin-bottom: 7px;
     }
     .io-tab {
       font-size: 10px;
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: .08em;
-      border-radius: 999px;
-      border: 1px solid #D1D5DB;
-      padding: 4px 10px;
-      background: #FFFFFF;
+      border: none;
+      border-bottom: 2px solid transparent;
+      padding: 2px 0;
+      background: transparent;
       color: #64748B;
       cursor: pointer;
     }
-    .io-tab:hover { border-color: #94A3B8; color: #334155; }
-    .io-tab.active[data-tab="input"] { background: #DBEAFE; color: #1E40AF; border-color: #93C5FD; }
-    .io-tab.active[data-tab="output"] { background: #DCFCE7; color: #166534; border-color: #86EFAC; }
-    .io-tab.empty { opacity: .65; }
+    .io-tab:hover { color: #334155; }
+    .io-tab.active[data-tab="input"] { color: #1E40AF; border-bottom-color: #60A5FA; }
+    .io-tab.active[data-tab="output"] { color: #166534; border-bottom-color: #34D399; }
+    .io-tab.empty { opacity: .55; }
 
     .io-pane { display: none; }
     .io-pane.active { display: block; }
-    .io-pane-head {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 6px;
-    }
-    .io-lbl {
-      font-size: 9px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: .1em;
-      color: #64748B;
-    }
-    .io-copy-btn {
-      font-size: 10px;
-      color: #334155;
-      background: #FFFFFF;
-      border: 1px solid #CBD5E1;
-      border-radius: 999px;
-      padding: 2px 8px;
-      cursor: pointer;
-    }
-    .io-copy-btn:hover { border-color: #94A3B8; color: #0F172A; }
     .no-io {
       font-size: 11px;
       color: #94A3B8;
       font-style: italic;
-      background: #F8FAFC;
-      border: 1px dashed #CBD5E1;
-      border-radius: 8px;
-      padding: 9px 10px;
+      padding: 2px 0 4px 0;
     }
     .io-val-wrap {
       position: relative;
-      border-radius: 8px;
-      overflow: hidden;
+      overflow: visible;
     }
     .io-val {
       font-family: 'SF Mono', Monaco, 'Courier New', monospace;
       font-size: 11px;
       line-height: 1.62;
       color: #334155;
-      background: #F8FAFC;
-      border: 1px solid #E2E8F0;
-      border-radius: 8px;
-      padding: 10px 11px;
+      background: transparent;
+      border: none;
+      border-radius: 0;
+      padding: 2px 0 0 0;
       white-space: pre-wrap;
       word-break: break-word;
       max-height: 280px;
       overflow-y: auto;
       overscroll-behavior: contain;
-      box-shadow: inset 0 1px 2px rgba(15, 23, 42, 0.04);
+      box-shadow: none;
     }
     .io-val.collapsed { max-height: 120px; overflow: hidden; }
     .io-val::-webkit-scrollbar { width: 5px; }
     .io-val::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 3px; }
-    .io-fade {
-      position: absolute;
-      left: 1px;
-      right: 1px;
-      bottom: 1px;
-      height: 34px;
-      background: linear-gradient(180deg, rgba(248,250,252,0), #F8FAFC 70%);
-      pointer-events: none;
-    }
-    .io-val-wrap.expanded .io-fade { display: none; }
+    .io-fade { display: none; }
     .io-more {
       font-size: 10px;
       color: #4F46E5;
@@ -440,28 +378,61 @@
     }
     .io-more:hover { color: #3730A3; }
 
-    .blk-rc-btn {
-      font-size: 9px;
-      font-weight: 700;
-      padding: 3px 8px;
-      border-radius: 999px;
-      border: 1px solid #FCA5A5;
-      background: #FFF1F2;
-      color: #9F1239;
-      cursor: pointer;
+    /* ── Detail panel (summary + annotation tabs) ────────────── */
+    #detail-panel {
+      flex: 1.15;
+      display: flex;
+      flex-direction: column;
+      min-width: 0;
+      background: #F8FAFC;
+    }
+    #detail-tabs {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      margin: 10px 12px 8px 12px;
+      padding: 2px;
+      border: 1px solid #E2E8F0;
+      border-radius: 10px;
+      background: #F1F5F9;
       flex-shrink: 0;
     }
-    .blk-rc-btn:hover { background: #FFE4E6; }
-    .blk-rc-btn.selected { background: #EF4444; color: #fff; border-color: #EF4444; }
-
-    /* ── Left panel (summary) ────────────────────────────────── */
-    #left-panel {
+    .detail-tab {
       flex: 1;
-      overflow-y: auto;
-      background: #FFFFFF;
+      font-size: 12px;
+      font-weight: 500;
+      border-radius: 8px;
+      border: 1px solid transparent;
+      background: transparent;
+      color: #64748B;
+      padding: 4px 10px;
+      cursor: pointer;
+      transition: background .14s ease, color .14s ease, border-color .14s ease, box-shadow .14s ease;
     }
-    #left-panel::-webkit-scrollbar { width: 5px; }
-    #left-panel::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 3px; }
+    .detail-tab:hover {
+      color: #475569;
+    }
+    .detail-tab.active {
+      background: #FFFFFF;
+      color: #334155;
+      border-color: #CBD5E1;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.06);
+    }
+    #detail-views {
+      flex: 1;
+      min-height: 0;
+      position: relative;
+    }
+    .detail-view {
+      height: 100%;
+      overflow-y: auto;
+      display: none;
+    }
+    .detail-view.active { display: block; }
+    .detail-view::-webkit-scrollbar { width: 5px; }
+    .detail-view::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 3px; }
+    #detail-view-summary { background: #FFFFFF; }
+    #detail-view-annotation { background: #F8FAFC; }
     #left-content { padding: 10px 0 24px 0; }
 
     .panel-empty {
@@ -509,7 +480,6 @@
       background: #F1F5F9; padding: 1px 5px; border-radius: 3px;
       flex-shrink: 0; user-select: all;
     }
-    .se-dur { font-size: 10px; color: #94A3B8; flex-shrink: 0; }
     .se-text { font-size: 13px; line-height: 1.68; color: #475569; }
 
     .se-collapse-btn {
@@ -528,14 +498,7 @@
     .se-rc-btn:hover { background: #FEE2E2; }
     .se-rc-btn.selected { background: #EF4444; color: #fff; border-color: #EF4444; }
 
-    /* ── Right panel (annotation) ────────────────────────────── */
-    #right-panel {
-      flex: 1;
-      overflow-y: auto;
-      background: #F8FAFC;
-    }
-    #right-panel::-webkit-scrollbar { width: 5px; }
-    #right-panel::-webkit-scrollbar-thumb { background: #E2E8F0; border-radius: 3px; }
+    /* ── Annotation view ─────────────────────────────────────── */
     #right-content { padding: 16px; }
 
     /* Sections */
@@ -724,18 +687,11 @@
   <button class="hdr-btn" id="save-btn" disabled onclick="saveAnnotation()">Save (Ctrl+S)</button>
 </div>
 
-<!-- Column headers -->
-<div id="col-headers">
-  <div class="col-hdr col-hdr-sidebar">Traces</div>
-  <div class="col-hdr col-hdr-spans">Trace Spans</div>
-  <div class="col-hdr col-hdr-left">Trace Summary</div>
-  <div class="col-hdr col-hdr-right">Annotation</div>
-</div>
-
 <!-- Main -->
 <div id="main">
   <!-- Sidebar -->
   <div id="sidebar">
+    <div class="panel-title">Traces</div>
     <input type="text" id="search-box" placeholder="Search trace ID...">
     <div id="progress-counter">
       <span id="progress-text">— / — done</span>
@@ -746,6 +702,7 @@
 
   <!-- Spans: trace span tree (matches trace_viewer left panel) -->
   <div id="spans-panel">
+    <div class="panel-title">Trace Spans</div>
     <div class="panel-empty" id="spans-empty">
       <div class="panel-empty-icon">&#128203;</div>
       <div>Select a trace to see spans</div>
@@ -753,22 +710,28 @@
     <div id="spans-content" style="display:none"></div>
   </div>
 
-  <!-- Left: summary (matches trace_viewer right panel) -->
-  <div id="left-panel">
-    <div class="panel-empty" id="left-empty">
-      <div class="panel-empty-icon">&#128214;</div>
-      <div>Select a trace to see its summary</div>
+  <!-- Detail: summary + annotation -->
+  <div id="detail-panel">
+    <div id="detail-tabs">
+      <button type="button" class="detail-tab active" data-tab="summary" onclick="switchDetailTab('summary')">Trace Summary</button>
+      <button type="button" class="detail-tab" data-tab="annotation" onclick="switchDetailTab('annotation')">Annotation</button>
     </div>
-    <div id="left-content" style="display:none"></div>
-  </div>
-
-  <!-- Right: annotation -->
-  <div id="right-panel">
-    <div class="panel-empty" id="right-empty">
-      <div class="panel-empty-icon">&#9997;</div>
-      <div>Annotation panel</div>
+    <div id="detail-views">
+      <div class="detail-view active" id="detail-view-summary">
+        <div class="panel-empty" id="left-empty">
+          <div class="panel-empty-icon">&#128214;</div>
+          <div>Select a trace to see its summary</div>
+        </div>
+        <div id="left-content" style="display:none"></div>
+      </div>
+      <div class="detail-view" id="detail-view-annotation">
+        <div class="panel-empty" id="right-empty">
+          <div class="panel-empty-icon">&#9997;</div>
+          <div>Annotation panel</div>
+        </div>
+        <div id="right-content" style="display:none"></div>
+      </div>
     </div>
-    <div id="right-content" style="display:none"></div>
   </div>
 </div>
 
@@ -853,6 +816,7 @@ let _traceList = [];
 let _currentIdx = -1;
 let _currentData = null;
 let _dirty = false;
+let _detailTab = 'summary';
 
 // cross-highlight state
 let _spanEls = {};     // spanId → DOM el (spans panel)
@@ -869,10 +833,26 @@ let _notes = '';
 // auto-save
 let _autoSaveTimer = null;
 
+function switchDetailTab(tab) {
+  _detailTab = tab === 'annotation' ? 'annotation' : 'summary';
+
+  document.querySelectorAll('#detail-tabs .detail-tab').forEach(btn => {
+    btn.classList.toggle('active', btn.dataset.tab === _detailTab);
+  });
+
+  const summaryView = document.getElementById('detail-view-summary');
+  const annotationView = document.getElementById('detail-view-annotation');
+  if (summaryView) summaryView.classList.toggle('active', _detailTab === 'summary');
+  if (annotationView) annotationView.classList.toggle('active', _detailTab === 'annotation');
+}
+
 // ================================================================
 // Init
 // ================================================================
-document.addEventListener('DOMContentLoaded', () => { initTaskSelector(); });
+document.addEventListener('DOMContentLoaded', () => {
+  switchDetailTab(_detailTab);
+  initTaskSelector();
+});
 document.addEventListener('keydown', e => {
   // Ctrl/Cmd+S: save
   if ((e.ctrlKey || e.metaKey) && e.key === 's') {
@@ -1215,19 +1195,19 @@ function renderSpans() {
   });
 
   const ordered = dfs(spans);
-  ordered.forEach(span => {
-    const el = buildBlock(span);
+  ordered.forEach((span, idx) => {
+    const el = buildBlock(span, idx);
     _spanEls[span.span_id] = el;
     sc.appendChild(el);
   });
 }
 
-function buildBlock(span) {
+function buildBlock(span, idx) {
   const c = cfgOf(span);
   const isRC = _rootCauseSpanId === span.span_id;
   const iv = getIn(span);
   const ov = getOut(span);
-  const attrs = span.span_attributes || {};
+  const kind = (span.span_attributes || {})['openinference.span.kind'] || span.span_name || 'Span';
 
   const el = document.createElement('div');
   el.className = 'span-block' + (isRC ? ' root-cause-marked' : '');
@@ -1241,32 +1221,39 @@ function buildBlock(span) {
   const top = document.createElement('div');
   top.className = 'blk-top';
 
-  const badge = document.createElement('span');
-  badge.className = 'blk-badge';
-  const label = (c === DEF_CFG) ? 'SPAN' : Object.keys(TYPE_CFG).find(k => TYPE_CFG[k] === c) || 'SPAN';
-  badge.style.cssText = `background:${c.bg};color:${c.color};border:1px solid ${c.border}`;
-  badge.textContent = label;
-
   const nm = document.createElement('span');
   nm.className = 'blk-name';
-  nm.title = span.span_name;
-  nm.textContent = span.span_name;
+  nm.title = span.span_name || kind;
+  nm.textContent = span.span_name || kind;
 
-  const d = document.createElement('span');
-  d.className = 'blk-dur';
-  d.textContent = fmtDur(span.duration) || '—';
+  const inlineMeta = document.createElement('span');
+  inlineMeta.className = 'blk-inline-meta';
+  const rawId = span.span_id || '?';
+  inlineMeta.textContent = rawId;
+  inlineMeta.title = rawId;
 
-  const st = span.status_code;
-  let stChip = null;
-  if (st && st !== 'Unset') {
-    stChip = document.createElement('span');
-    stChip.className = 'blk-status ' + (String(st).toLowerCase() === 'ok' ? 'st-ok' : 'st-error');
-    stChip.textContent = st;
-  }
+  let activePaneKey = 'input';
+  const copyBtn = document.createElement('button');
+  copyBtn.type = 'button';
+  copyBtn.className = 'blk-copy-btn';
+  copyBtn.textContent = 'Copy';
+  copyBtn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const src = activePaneKey === 'output' ? ov : iv;
+    if (!src) return;
+    const pretty = prettyVal(src) || '';
+    try {
+      await navigator.clipboard.writeText(pretty);
+      copyBtn.textContent = 'Copied';
+    } catch {
+      copyBtn.textContent = 'Failed';
+    }
+    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 900);
+  });
 
   // Root cause button
   const rcBtn = document.createElement('button');
-  rcBtn.className = 'blk-rc-btn' + (isRC ? ' selected' : '');
+  rcBtn.className = 'se-rc-btn' + (isRC ? ' selected' : '');
   rcBtn.textContent = isRC ? 'Root Cause' : 'Mark RC';
   rcBtn.title = 'Mark this span as root cause';
   rcBtn.addEventListener('click', (e) => {
@@ -1283,27 +1270,8 @@ function buildBlock(span) {
     renderRootCauseSection();
   });
 
-  top.append(badge, nm, d);
-  if (stChip) top.appendChild(stChip);
-  top.appendChild(rcBtn);
+  top.append(nm, inlineMeta, copyBtn, rcBtn);
   hdr.appendChild(top);
-
-  const meta = document.createElement('div');
-  meta.className = 'blk-meta';
-  meta.appendChild(mkMetaChip(`id ${span.span_id || '?'}`, 'mono'));
-  if (span.parent_span_id) {
-    meta.appendChild(mkMetaChip(`parent ${span.parent_span_id}`, 'mono'));
-  }
-  if (attrs['llm.model_name']) {
-    meta.appendChild(mkMetaChip(attrs['llm.model_name'], 'model'));
-  }
-  if (attrs['llm.token_count.total'] !== undefined && attrs['llm.token_count.total'] !== null && attrs['llm.token_count.total'] !== '') {
-    meta.appendChild(mkMetaChip(`tok ${attrs['llm.token_count.total']}`, 'token'));
-  }
-  if (span.status_message) {
-    meta.appendChild(mkMetaChip(String(span.status_message).slice(0, 80), 'warn'));
-  }
-  hdr.appendChild(meta);
 
   el.appendChild(hdr);
 
@@ -1324,8 +1292,12 @@ function buildBlock(span) {
   panesWrap.appendChild(panes.output);
 
   function activateTab(key) {
+    activePaneKey = key;
     tabs.querySelectorAll('.io-tab').forEach(tab => tab.classList.toggle('active', tab.dataset.tab === key));
     Object.entries(panes).forEach(([k, pane]) => pane.classList.toggle('active', k === key));
+    const hasContent = key === 'output' ? !!ov : !!iv;
+    copyBtn.disabled = !hasContent;
+    copyBtn.title = hasContent ? `Copy ${key}` : `No ${key} content`;
   }
 
   function mkTab(labelText, key, hasContent) {
@@ -1361,13 +1333,6 @@ function buildBlock(span) {
   return el;
 }
 
-function mkMetaChip(text, cls) {
-  const chip = document.createElement('span');
-  chip.className = 'blk-chip' + (cls ? ` ${cls}` : '');
-  chip.textContent = text;
-  return chip;
-}
-
 function activateSpanEl(spanId) {
   Object.values(_spanEls).forEach(e => e.classList.remove('active'));
   const el = _spanEls[spanId];
@@ -1390,39 +1355,15 @@ function mkIOPane(label, raw) {
   const pane = document.createElement('div');
   pane.className = 'io-pane';
 
-  const head = document.createElement('div');
-  head.className = 'io-pane-head';
-
-  const lbl = document.createElement('div');
-  lbl.className = 'io-lbl';
-  lbl.textContent = label;
-  head.appendChild(lbl);
-  pane.appendChild(head);
-
   if (!raw) {
     const empty = document.createElement('div');
     empty.className = 'no-io';
-    empty.textContent = `No ${label.toLowerCase()} content`;
+    empty.textContent = 'No content';
     pane.appendChild(empty);
     return pane;
   }
 
   const pretty = prettyVal(raw) || '';
-  const copyBtn = document.createElement('button');
-  copyBtn.type = 'button';
-  copyBtn.className = 'io-copy-btn';
-  copyBtn.textContent = 'Copy';
-  copyBtn.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    try {
-      await navigator.clipboard.writeText(pretty);
-      copyBtn.textContent = 'Copied';
-    } catch {
-      copyBtn.textContent = 'Failed';
-    }
-    setTimeout(() => { copyBtn.textContent = 'Copy'; }, 900);
-  });
-  head.appendChild(copyBtn);
 
   const wrap = document.createElement('div');
   wrap.className = 'io-val-wrap';
@@ -1435,7 +1376,7 @@ function mkIOPane(label, raw) {
 
   // If the IO box cannot scroll itself, route wheel to the outer spans panel.
   val.addEventListener('wheel', (e) => {
-    const spansPanel = document.getElementById('spans-panel');
+    const spansPanel = document.getElementById('spans-content') || document.getElementById('spans-panel');
     if (!spansPanel) return;
     const selfScrollable = val.scrollHeight > val.clientHeight + 1;
     if (selfScrollable && !val.classList.contains('collapsed')) return;
@@ -1564,10 +1505,6 @@ function buildEntry(entry) {
   sid.className = 'se-id';
   sid.textContent = entry.spanId;
 
-  const d = document.createElement('span');
-  d.className = 'se-dur';
-  d.textContent = fmtDur(entry.duration);
-
   // Root cause button
   const rcBtn = document.createElement('button');
   rcBtn.className = 'se-rc-btn' + (isRC ? ' selected' : '');
@@ -1587,7 +1524,7 @@ function buildEntry(entry) {
     renderRootCauseSection();
   });
 
-  hdr.append(dot, nm, sid, d, rcBtn);
+  hdr.append(dot, nm, sid, rcBtn);
   el.appendChild(hdr);
 
   if (entry.text) {
