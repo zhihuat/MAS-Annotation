@@ -6,6 +6,8 @@ The UI is named **Root Cause Annotator**. It supports switching tasks under `dat
 
 **Feel free to optimize the annotation pipeline.**
 
+![image](image.png)
+
 ## 1. What this tool does
 
 1. Auto-discovers tasks from directory names under `data/traces/{task}`.
