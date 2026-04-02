@@ -105,6 +105,8 @@ In this pattern, do not label hallucination by default.
 Some traces use subagent `ToolCallingAgent` for the first search and that search may fail.  
 In this case, root cause is often the `LLM` span that invoked the subagent.  
 Example: trace `387546b0d3e81503bd8d392c6f1b6b25`, span `cb461255a353bdc6`.
+5. We exclude traces where error identification requires access to the gold answer, since a realistic debugging scenario assumes the evaluator does not have the ground truth. For instance, in trace `772605f0794b0fa96bc942a8a7736571`, the agent retrieves 10 URLs at span `1fa10d06b78d1e17` and selects an incorrect one to visit, ultimately failing the task. Span `1fa10d06b78d1e17` should represent meaningful progress toward the goal, but an evaluator cannot know this without knowing the correct URL.
+ 
 
 ## 4. Run
 
