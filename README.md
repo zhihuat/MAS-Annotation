@@ -4,6 +4,8 @@ A local web tool for multi-task root-cause annotation.
 
 The UI is named **Root Cause Annotator**. It supports switching tasks under `data/traces/` and stores annotation results in `saved / excluded` folders per task.
 
+**Feel free to optimize the annotation pipeline.**
+
 ## 1. What this tool does
 
 1. Auto-discovers tasks from directory names under `data/traces/{task}`.
