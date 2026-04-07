@@ -245,10 +245,24 @@ def extract_task_description(
         if "CodeAgent.run" in span_name or "Agent.run" in span_name:
             attrs = span.get("span_attributes", {})
             input_val = attrs.get(SpanAttributes.INPUT_VALUE, "")
-            if input_val:    
+            if input_val:
                 input_data = json.loads(input_val) if isinstance(input_val, str) else input_val
                 task = input_data.get("task", "")
                 idx = task.find("Here is the task:\n")
                 if idx != -1:
                     task = task[idx + len("Here is the task:\n"):]
                     return task
+
+    # Method 3: Root span's span_attributes["input.value"]
+    for span in span_list:
+        if span.get("parent_span_id") is None:
+            attrs = span.get("span_attributes", {})
+            input_val = attrs.get(SpanAttributes.INPUT_VALUE, "")
+            if input_val:
+                if isinstance(input_val, str):
+                    try:
+                        input_val = json.loads(input_val)
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+                if isinstance(input_val, str) and input_val:
+                    return input_val[:max_length]
